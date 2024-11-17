@@ -66,6 +66,11 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+4. Prepare your floor plan:
+   - Save your building floor plan as an image file (e.g., PNG format)
+   - Place it in the project root directory
+   - Update the floor plan path in `src/main.py` if needed
+
 ## Usage
 
 ### Data Collection and Model Training

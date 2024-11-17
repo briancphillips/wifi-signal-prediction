@@ -38,6 +38,8 @@ visualizations/
 models/
 *.csv
 *.joblib
+download-4.png
+floor_plan*.png
 
 # macOS
 .DS_Store
