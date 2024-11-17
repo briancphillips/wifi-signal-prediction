@@ -157,6 +157,67 @@ class WiFiVisualizer:
         plt.savefig(os.path.join(self.output_dir, 'signal_distribution.png'))
         plt.close()
         
+    def plot_model_comparison(self, models_results):
+        """Create a comparison plot of model performances.
+        
+        Args:
+            models_results (dict): Dictionary containing results for each model
+        """
+        plt.figure(figsize=(12, 6))
+        
+        # Prepare data for plotting
+        models = list(models_results.keys())
+        rmse_scores = [results['metrics']['rmse'] for results in models_results.values()]
+        r2_scores = [results['metrics']['r2'] for results in models_results.values()]
+        cv_rmse = [results['cv_results']['mean_rmse'] for results in models_results.values()]
+        cv_std = [results['cv_results']['std_rmse'] for results in models_results.values()]
+        
+        # Plot settings
+        x = np.arange(len(models))
+        width = 0.25
+        
+        # Create grouped bar plot
+        plt.bar(x - width, rmse_scores, width, label='RMSE', color='skyblue')
+        plt.bar(x, r2_scores, width, label='R² Score', color='lightgreen')
+        plt.bar(x + width, cv_rmse, width, label='CV RMSE', color='salmon')
+        
+        # Add error bars for cross-validation
+        plt.errorbar(x + width, cv_rmse, yerr=cv_std, fmt='none', color='black', capsize=5)
+        
+        # Customize plot
+        plt.xlabel('Models')
+        plt.ylabel('Score')
+        plt.title('Model Performance Comparison')
+        plt.xticks(x, [model.upper() for model in models])
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        
+        # Save plot
+        plt.tight_layout()
+        plt.savefig(os.path.join(self.output_dir, 'model_comparison.png'))
+        plt.close()
+        
+    def create_performance_table(self, models_results):
+        """Create a detailed performance metrics table.
+        
+        Args:
+            models_results (dict): Dictionary containing results for each model
+            
+        Returns:
+            pd.DataFrame: Table of performance metrics
+        """
+        metrics = []
+        for model_name, results in models_results.items():
+            metrics.append({
+                'Model': model_name.upper(),
+                'RMSE': f"{results['metrics']['rmse']:.4f}",
+                'R² Score': f"{results['metrics']['r2']:.4f}",
+                'CV RMSE (mean)': f"{results['cv_results']['mean_rmse']:.4f}",
+                'CV RMSE (std)': f"{results['cv_results']['std_rmse']:.4f}"
+            })
+        
+        return pd.DataFrame(metrics)
+
     def create_dashboard(self, data, models_results=None):
         """Create all visualizations for the data.
         
@@ -173,6 +234,13 @@ class WiFiVisualizer:
         
         # Create model-specific visualizations if available
         if models_results:
+            # Create model comparison plot
+            self.plot_model_comparison(models_results)
+            
+            # Create and save performance table
+            performance_table = self.create_performance_table(models_results)
+            performance_table.to_csv(os.path.join(self.output_dir, 'model_performance.csv'), index=False)
+            
             for model_name, results in models_results.items():
                 if 'predictions' in results:
                     self.plot_predictions_vs_actual(
