@@ -89,10 +89,34 @@ This tool helps:
 ## Visual Examples
 
 The system generates several types of visualizations:
-1. Heat maps showing signal strength across your space
-2. Coverage maps showing how different access points overlap
-3. 3D models showing signal propagation
-4. Prediction accuracy comparisons
+
+### 1. Building Coverage Map
+![Building Coverage Map](examples/building_coverage.png)
+- Shows how WiFi signals cover your space
+- Identifies potential dead zones
+- Displays coverage overlap between access points
+- Helps optimize access point placement
+
+### 2. 3D Signal Strength Map
+![3D Signal Map](examples/building_3d_map.png)
+- Visualizes signal strength in three dimensions
+- Shows how signals propagate through space
+- Helps understand signal behavior around obstacles
+- Makes it easy to spot areas needing improvement
+
+### 3. Signal Distribution Analysis
+![Signal Distribution](examples/signal_distribution.png)
+- Shows the range of signal strengths across your space
+- Helps identify consistent vs problematic areas
+- Compares performance of different access points
+- Guides optimization decisions
+
+### 4. Feature Importance Analysis
+![Feature Importance](examples/feature_importance.png)
+- Shows what factors most affect signal strength
+- Helps focus optimization efforts
+- Guides troubleshooting processes
+- Informs network planning decisions
 
 ## Getting Started
 
