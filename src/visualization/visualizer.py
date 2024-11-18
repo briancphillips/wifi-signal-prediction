@@ -16,243 +16,111 @@ class WiFiVisualizer:
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
             
-    def plot_signal_heatmap(self, data):
-        """Create a heatmap of signal strengths across access points.
+    def create_dashboard(self, data, model_results):
+        """Create a comprehensive visualization dashboard.
         
         Args:
-            data (pd.DataFrame): WiFi signal strength data
+            data (pd.DataFrame): Original data
+            model_results (dict): Results from model training
         """
-        # Pivot the data to create a matrix of RSSI values
-        pivot_data = data.pivot_table(
-            values='rssi',
-            index='timestamp',
-            columns='ssid',
-            aggfunc='mean'
-        )
+        print("Creating visualizations...")
         
-        plt.figure(figsize=(12, 8))
-        sns.heatmap(pivot_data, cmap='RdYlBu_r', center=-65)
-        plt.title('WiFi Signal Strength Heatmap')
-        plt.xlabel('Access Points')
-        plt.ylabel('Time')
+        # Create individual plots
+        self._plot_signal_distribution(data)
+        self._plot_signal_over_time(data)
+        self._plot_model_comparison(model_results)
+        self._plot_feature_importance(model_results)
+        self._plot_prediction_accuracy(model_results)
         
-        # Rotate x-axis labels for better readability
-        plt.xticks(rotation=45, ha='right')
+        print(f"Visualizations saved in {self.output_dir}/")
         
-        # Save the plot
-        plt.tight_layout()
-        plt.savefig(os.path.join(self.output_dir, 'signal_heatmap.png'))
-        plt.close()
-        
-    def plot_signal_over_time(self, data):
-        """Plot signal strength over time for each access point.
-        
-        Args:
-            data (pd.DataFrame): WiFi signal strength data
-        """
-        plt.figure(figsize=(12, 6))
-        
-        # Plot each access point
-        for ssid in data['ssid'].unique():
-            ap_data = data[data['ssid'] == ssid]
-            plt.plot(ap_data['timestamp'], ap_data['rssi'], label=ssid, alpha=0.7)
-        
-        plt.title('WiFi Signal Strength Over Time')
-        plt.xlabel('Time')
-        plt.ylabel('Signal Strength (dBm)')
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        plt.grid(True, alpha=0.3)
-        
-        # Rotate x-axis labels for better readability
-        plt.xticks(rotation=45, ha='right')
-        
-        # Save the plot
-        plt.tight_layout()
-        plt.savefig(os.path.join(self.output_dir, 'signal_over_time.png'))
-        plt.close()
-        
-    def plot_predictions_vs_actual(self, y_true, y_pred, model_name):
-        """Plot predicted vs actual signal strengths.
-        
-        Args:
-            y_true (np.array): Actual signal strength values
-            y_pred (np.array): Predicted signal strength values
-            model_name (str): Name of the model used for predictions
-        """
-        plt.figure(figsize=(8, 8))
-        
-        # Plot the scatter plot
-        plt.scatter(y_true, y_pred, alpha=0.5)
-        
-        # Plot the perfect prediction line
-        min_val = min(y_true.min(), y_pred.min())
-        max_val = max(y_true.max(), y_pred.max())
-        plt.plot([min_val, max_val], [min_val, max_val], 'r--', label='Perfect Prediction')
-        
-        plt.title(f'{model_name} - Predicted vs Actual Signal Strength')
-        plt.xlabel('Actual Signal Strength (dBm)')
-        plt.ylabel('Predicted Signal Strength (dBm)')
-        plt.legend()
-        plt.grid(True, alpha=0.3)
-        
-        # Save the plot
-        plt.tight_layout()
-        plt.savefig(os.path.join(self.output_dir, f'{model_name.lower()}_predictions.png'))
-        plt.close()
-        
-    def plot_feature_importance(self, model, feature_names):
-        """Plot feature importance for tree-based models.
-        
-        Args:
-            model: Trained model with feature_importances_ attribute
-            feature_names (list): List of feature names
-        """
-        if not hasattr(model, 'feature_importances_'):
-            return
-            
+    def _plot_signal_distribution(self, data):
+        """Plot signal strength distribution."""
         plt.figure(figsize=(10, 6))
-        
-        # Get feature importance
-        importances = model.feature_importances_
-        indices = np.argsort(importances)[::-1]
-        
-        # Plot feature importance
-        plt.bar(range(len(importances)), importances[indices])
-        plt.title('Feature Importance')
-        plt.xlabel('Features')
-        plt.ylabel('Importance')
-        
-        # Add feature names to x-axis
-        plt.xticks(range(len(importances)), 
-                  [feature_names[i] for i in indices],
-                  rotation=45,
-                  ha='right')
-        
-        # Save the plot
-        plt.tight_layout()
-        plt.savefig(os.path.join(self.output_dir, 'feature_importance.png'))
-        plt.close()
-        
-    def plot_signal_distribution(self, data):
-        """Plot the distribution of signal strengths.
-        
-        Args:
-            data (pd.DataFrame): WiFi signal strength data
-        """
-        plt.figure(figsize=(10, 6))
-        
-        # Plot distribution for each access point
-        for ssid in data['ssid'].unique():
-            ap_data = data[data['ssid'] == ssid]
-            sns.kdeplot(data=ap_data['rssi'], label=ssid, alpha=0.7)
-        
-        plt.title('Distribution of WiFi Signal Strengths')
-        plt.xlabel('Signal Strength (dBm)')
-        plt.ylabel('Density')
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        plt.grid(True, alpha=0.3)
-        
-        # Save the plot
-        plt.tight_layout()
+        sns.histplot(data=data, x='rssi', hue='ssid', multiple="stack")
+        plt.title('Signal Strength Distribution by Access Point')
+        plt.xlabel('RSSI (dBm)')
+        plt.ylabel('Count')
         plt.savefig(os.path.join(self.output_dir, 'signal_distribution.png'))
         plt.close()
         
-    def plot_model_comparison(self, models_results):
-        """Create a comparison plot of model performances.
-        
-        Args:
-            models_results (dict): Dictionary containing results for each model
-        """
+    def _plot_signal_over_time(self, data):
+        """Plot signal strength over time."""
         plt.figure(figsize=(12, 6))
-        
-        # Prepare data for plotting
-        models = list(models_results.keys())
-        rmse_scores = [results['metrics']['rmse'] for results in models_results.values()]
-        r2_scores = [results['metrics']['r2'] for results in models_results.values()]
-        cv_rmse = [results['cv_results']['mean_rmse'] for results in models_results.values()]
-        cv_std = [results['cv_results']['std_rmse'] for results in models_results.values()]
-        
-        # Plot settings
-        x = np.arange(len(models))
-        width = 0.25
-        
-        # Create grouped bar plot
-        plt.bar(x - width, rmse_scores, width, label='RMSE', color='skyblue')
-        plt.bar(x, r2_scores, width, label='R² Score', color='lightgreen')
-        plt.bar(x + width, cv_rmse, width, label='CV RMSE', color='salmon')
-        
-        # Add error bars for cross-validation
-        plt.errorbar(x + width, cv_rmse, yerr=cv_std, fmt='none', color='black', capsize=5)
-        
-        # Customize plot
-        plt.xlabel('Models')
-        plt.ylabel('Score')
-        plt.title('Model Performance Comparison')
-        plt.xticks(x, [model.upper() for model in models])
+        for ssid in data['ssid'].unique():
+            ssid_data = data[data['ssid'] == ssid]
+            plt.plot(ssid_data['timestamp'], ssid_data['rssi'], label=ssid, alpha=0.7)
+        plt.title('Signal Strength Over Time')
+        plt.xlabel('Time')
+        plt.ylabel('RSSI (dBm)')
         plt.legend()
-        plt.grid(True, alpha=0.3)
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.savefig(os.path.join(self.output_dir, 'signal_time_series.png'))
+        plt.close()
         
-        # Save plot
+    def _plot_model_comparison(self, model_results):
+        """Plot model performance comparison."""
+        models = list(model_results.keys())
+        rmse_scores = [results['metrics']['rmse'] for results in model_results.values()]
+        r2_scores = [results['metrics']['r2'] for results in model_results.values()]
+        
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+        
+        # RMSE comparison
+        ax1.bar(models, rmse_scores)
+        ax1.set_title('RMSE by Model')
+        ax1.set_ylabel('RMSE')
+        
+        # R² comparison
+        ax2.bar(models, r2_scores)
+        ax2.set_title('R² Score by Model')
+        ax2.set_ylabel('R²')
+        
         plt.tight_layout()
         plt.savefig(os.path.join(self.output_dir, 'model_comparison.png'))
         plt.close()
         
-    def create_performance_table(self, models_results):
-        """Create a detailed performance metrics table.
+    def _plot_feature_importance(self, model_results):
+        """Plot feature importance for each model."""
+        for model_name, results in model_results.items():
+            if 'feature_importance' in results:
+                importance_dict = results['feature_importance']
+                features = list(importance_dict.keys())
+                importances = list(importance_dict.values())
+                
+                # Sort by absolute importance
+                sorted_idx = np.argsort(np.abs(importances))
+                pos = np.arange(len(features)) + .5
+                
+                plt.figure(figsize=(12, len(features)/2))
+                plt.barh(pos, np.array(importances)[sorted_idx])
+                plt.yticks(pos, np.array(features)[sorted_idx])
+                plt.xlabel('Feature Importance')
+                plt.title(f'Feature Importance - {model_name.upper()}')
+                plt.tight_layout()
+                plt.savefig(os.path.join(self.output_dir, f'feature_importance_{model_name}.png'))
+                plt.close()
         
-        Args:
-            models_results (dict): Dictionary containing results for each model
+    def _plot_prediction_accuracy(self, model_results):
+        """Plot prediction accuracy for each model."""
+        for model_name, results in model_results.items():
+            predictions = results['predictions']
+            actual = results['actual']
             
-        Returns:
-            pd.DataFrame: Table of performance metrics
-        """
-        metrics = []
-        for model_name, results in models_results.items():
-            metrics.append({
-                'Model': model_name.upper(),
-                'RMSE': f"{results['metrics']['rmse']:.4f}",
-                'R² Score': f"{results['metrics']['r2']:.4f}",
-                'CV RMSE (mean)': f"{results['cv_results']['mean_rmse']:.4f}",
-                'CV RMSE (std)': f"{results['cv_results']['std_rmse']:.4f}"
-            })
-        
-        return pd.DataFrame(metrics)
-
-    def create_dashboard(self, data, models_results=None):
-        """Create all visualizations for the data.
-        
-        Args:
-            data (pd.DataFrame): WiFi signal strength data
-            models_results (dict): Dictionary containing model results
-        """
-        print("Creating visualizations...")
-        
-        # Create basic data visualizations
-        self.plot_signal_heatmap(data)
-        self.plot_signal_over_time(data)
-        self.plot_signal_distribution(data)
-        
-        # Create model-specific visualizations if available
-        if models_results:
-            # Create model comparison plot
-            self.plot_model_comparison(models_results)
+            plt.figure(figsize=(10, 6))
+            plt.scatter(actual, predictions, alpha=0.5)
+            plt.plot([actual.min(), actual.max()], [actual.min(), actual.max()], 'r--', lw=2)
+            plt.xlabel('Actual Signal Strength (dBm)')
+            plt.ylabel('Predicted Signal Strength (dBm)')
+            plt.title(f'Prediction Accuracy - {model_name.upper()}')
             
-            # Create and save performance table
-            performance_table = self.create_performance_table(models_results)
-            performance_table.to_csv(os.path.join(self.output_dir, 'model_performance.csv'), index=False)
+            # Add metrics to plot
+            rmse = results['metrics']['rmse']
+            r2 = results['metrics']['r2']
+            plt.text(0.05, 0.95, f'RMSE: {rmse:.2f}\nR²: {r2:.2f}',
+                    transform=plt.gca().transAxes, verticalalignment='top')
             
-            for model_name, results in models_results.items():
-                if 'predictions' in results:
-                    self.plot_predictions_vs_actual(
-                        results['actual'],
-                        results['predictions'],
-                        model_name
-                    )
-                    
-                if 'model' in results and model_name.lower() == 'rf':
-                    self.plot_feature_importance(
-                        results['model'],
-                        results.get('feature_names', [f'Feature_{i}' for i in range(len(results['model'].feature_importances_))])
-                    )
-        
-        print(f"Visualizations saved in {self.output_dir}/")
+            plt.tight_layout()
+            plt.savefig(os.path.join(self.output_dir, f'prediction_accuracy_{model_name}.png'))
+            plt.close()

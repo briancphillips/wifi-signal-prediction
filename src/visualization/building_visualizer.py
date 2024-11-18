@@ -1,207 +1,185 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import Circle, Rectangle
-import matplotlib.image as mpimg
-from scipy.interpolate import griddata
+from matplotlib.colors import LinearSegmentedColormap
 import os
 
 class BuildingVisualizer:
-    def __init__(self, floor_plan_path, output_dir="visualizations"):
+    def __init__(self, floor_plan_path, output_dir='visualizations'):
         """Initialize the building visualizer.
         
         Args:
-            floor_plan_path (str): Path to the floor plan image
-            output_dir (str): Directory to store visualizations
+            floor_plan_path (str): Path to floor plan image
+            output_dir (str): Directory to save visualizations
         """
         self.floor_plan_path = floor_plan_path
         self.output_dir = output_dir
+        self.access_points = []
+        
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
             
-        # Load and store the floor plan image
-        self.floor_plan = mpimg.imread(floor_plan_path)
-        
-        # Get image dimensions
-        self.img_height, self.img_width = self.floor_plan.shape[:2]
-        
-        # Define the building dimensions in pixels
-        self.building_width = self.img_width
-        self.building_height = self.img_height
-        
-        # Store AP locations and their properties
-        self.access_points = []
-        
-    def add_access_point(self, x_percent, y_percent, ssid, rssi_range=(-90, -30)):
+    def add_access_point(self, x_percent, y_percent, ssid, channel=None, power_dbm=-20):
         """Add an access point to the visualization.
         
         Args:
-            x_percent (float): X coordinate as percentage of width (0-100)
-            y_percent (float): Y coordinate as percentage of height (0-100)
-            ssid (str): Access point SSID
-            rssi_range (tuple): Range of RSSI values (min, max)
+            x_percent (float): X position as percentage of width
+            y_percent (float): Y position as percentage of height
+            ssid (str): AP identifier
+            channel (int): WiFi channel number
+            power_dbm (float): Transmit power in dBm
         """
-        # Convert percentage to pixel coordinates
-        x = (x_percent / 100) * self.building_width
-        y = (y_percent / 100) * self.building_height
-        
+        if channel is None:
+            # Extract channel from SSID if format is AP*_Ch*
+            if '_Ch' in ssid:
+                try:
+                    channel = int(ssid.split('_Ch')[1])
+                except ValueError:
+                    channel = 1
+            else:
+                channel = 1
+                
         self.access_points.append({
-            'x': x,
-            'y': y,
+            'x': x_percent / 100,
+            'y': y_percent / 100,
             'ssid': ssid,
-            'rssi_range': rssi_range
+            'channel': channel,
+            'power': power_dbm
         })
         
-    def calculate_signal_strength(self, x, y, ap):
-        """Calculate theoretical signal strength at a point.
+    def _calculate_signal_strength(self, x, y, ap, material_loss=0):
+        """Calculate signal strength at a point from an AP.
         
         Args:
-            x (float): X coordinate in pixels
-            y (float): Y coordinate in pixels
+            x, y (float): Point coordinates
             ap (dict): Access point information
+            material_loss (float): Signal loss from materials in dB
             
         Returns:
-            float: Estimated RSSI value
+            float: Signal strength in dBm
         """
-        # Calculate distance from AP in pixels
-        distance = np.sqrt((x - ap['x'])**2 + (y - ap['y'])**2)
+        distance = np.sqrt((x - ap['x'])**2 + (y - ap['y'])**2) * 100  # Convert to meters
+        # Free space path loss model with material attenuation
+        if distance == 0:
+            return ap['power']
+        signal = ap['power'] - (20 * np.log10(distance) + 20 * np.log10(2400) - 27.55) - material_loss
+        return max(-100, signal)  # Cap minimum signal at -100 dBm
         
-        # Convert distance to meters (assume 1 meter = 20 pixels)
-        distance_meters = distance / 20
-        
-        # Path loss model with wall attenuation
-        # RSSI = -20 * log10(distance) - 35 - wall_loss
-        wall_loss = 0  # This could be calculated based on floor plan analysis
-        rssi = -20 * np.log10(max(distance_meters, 0.1)) - 35 - wall_loss
-        
-        # Clip to the specified range
-        return np.clip(rssi, ap['rssi_range'][0], ap['rssi_range'][1])
-        
-    def create_signal_heatmap(self, resolution=100):
-        """Create a signal strength heatmap overlay.
+    def _calculate_interference(self, x, y, channel, exclude_ap=None):
+        """Calculate interference at a point from other APs on same or adjacent channels.
         
         Args:
-            resolution (int): Number of points in each dimension
+            x, y (float): Point coordinates
+            channel (int): Channel to calculate interference for
+            exclude_ap (dict): AP to exclude from interference calculation
+            
+        Returns:
+            float: Interference power in dBm
         """
-        # Create grid of points
-        x = np.linspace(0, self.building_width, resolution)
-        y = np.linspace(0, self.building_height, resolution)
-        X, Y = np.meshgrid(x, y)
-        
-        # Calculate signal strength for each AP
+        interference_power = []
         for ap in self.access_points:
-            Z = np.zeros_like(X)
-            for i in range(resolution):
-                for j in range(resolution):
-                    Z[i,j] = self.calculate_signal_strength(X[i,j], Y[i,j], ap)
+            if ap == exclude_ap:
+                continue
+            # Calculate channel overlap factor (0 to 1)
+            channel_diff = abs(ap['channel'] - channel)
+            if channel_diff == 0:
+                overlap = 1.0
+            elif channel_diff <= 4:
+                overlap = 1.0 - (channel_diff * 0.2)
+            else:
+                continue
+                
+            signal = self._calculate_signal_strength(x, y, ap)
+            interference_power.append(10 ** (signal/10) * overlap)
             
-            plt.figure(figsize=(15, 10))
-            
-            # Plot floor plan
-            plt.imshow(self.floor_plan, extent=[0, self.building_width, 0, self.building_height], origin='upper')
-            
-            # Create heatmap overlay
-            heatmap = plt.imshow(Z, extent=[0, self.building_width, 0, self.building_height],
-                               alpha=0.5, cmap='RdYlBu_r', origin='upper')
-            plt.colorbar(heatmap, label='Signal Strength (dBm)')
-            
-            # Plot AP location
-            plt.plot(ap['x'], ap['y'], 'k^', markersize=10, label=f'AP: {ap["ssid"]}')
-            
-            # Add coverage circles (in pixels)
-            coverage_radii = [100, 200, 300]  # pixels
-            for radius in coverage_radii:
-                circle = Circle((ap['x'], ap['y']), radius, 
-                              fill=False, linestyle='--', alpha=0.5)
-                plt.gca().add_patch(circle)
-            
-            plt.title(f'Signal Strength Heatmap - {ap["ssid"]}')
-            plt.xlabel('X (pixels)')
-            plt.ylabel('Y (pixels)')
-            plt.legend()
-            
-            # Save the plot
-            plt.savefig(os.path.join(self.output_dir, f'building_heatmap_{ap["ssid"]}.png'))
-            plt.close()
-            
-    def visualize_combined_coverage(self):
-        """Create a visualization showing combined coverage of all APs."""
-        plt.figure(figsize=(15, 10))
-        
-        # Plot floor plan
-        plt.imshow(self.floor_plan, extent=[0, self.building_width, 0, self.building_height], origin='upper')
-        
-        # Plot all APs and their coverage areas
-        for ap in self.access_points:
-            plt.plot(ap['x'], ap['y'], 'k^', markersize=10, label=f'AP: {ap["ssid"]}')
-            
-            # Add coverage circles (in pixels)
-            coverage_radii = [100, 200, 300]  # pixels
-            for radius in coverage_radii:
-                circle = Circle((ap['x'], ap['y']), radius, 
-                              fill=False, linestyle='--', alpha=0.3)
-                plt.gca().add_patch(circle)
-        
-        plt.title('Combined WiFi Coverage Map')
-        plt.xlabel('X (pixels)')
-        plt.ylabel('Y (pixels)')
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        
-        # Save the plot
-        plt.tight_layout()
-        plt.savefig(os.path.join(self.output_dir, 'building_coverage.png'))
-        plt.close()
-        
-    def create_3d_signal_map(self, resolution=50):
-        """Create a 3D visualization of signal strength.
-        
-        Args:
-            resolution (int): Number of points in each dimension
-        """
-        from mpl_toolkits.mplot3d import Axes3D
-        
-        # Create grid of points
-        x = np.linspace(0, self.building_width, resolution)
-        y = np.linspace(0, self.building_height, resolution)
-        X, Y = np.meshgrid(x, y)
-        
-        # Calculate combined signal strength
-        Z = np.zeros_like(X)
-        for i in range(resolution):
-            for j in range(resolution):
-                # Use maximum signal strength from any AP
-                signals = [self.calculate_signal_strength(X[i,j], Y[i,j], ap) 
-                          for ap in self.access_points]
-                Z[i,j] = max(signals)
-        
-        # Create 3D plot
-        fig = plt.figure(figsize=(15, 10))
-        ax = fig.add_subplot(111, projection='3d')
-        
-        # Plot the surface
-        surf = ax.plot_surface(X, Y, Z, cmap='RdYlBu_r', alpha=0.8)
-        
-        # Add color bar
-        plt.colorbar(surf, label='Signal Strength (dBm)')
-        
-        # Plot AP locations
-        for ap in self.access_points:
-            ax.scatter([ap['x']], [ap['y']], [-30], 
-                      c='black', marker='^', s=100, label=f'AP: {ap["ssid"]}')
-        
-        ax.set_title('3D Signal Strength Map')
-        ax.set_xlabel('X (pixels)')
-        ax.set_ylabel('Y (pixels)')
-        ax.set_zlabel('Signal Strength (dBm)')
-        plt.legend()
-        
-        # Save the plot
-        plt.savefig(os.path.join(self.output_dir, 'building_3d_map.png'))
-        plt.close()
+        if not interference_power:
+            return -100
+        return 10 * np.log10(sum(interference_power))
         
     def create_all_visualizations(self):
-        """Create all building visualizations."""
+        """Create all visualizations for the building layout."""
         print("Creating building visualizations...")
-        self.create_signal_heatmap()
-        self.visualize_combined_coverage()
-        self.create_3d_signal_map()
+        
+        # Load floor plan
+        floor_plan = plt.imread(self.floor_plan_path)
+        height, width = floor_plan.shape[:2]
+        
+        # Create grid for heatmap
+        x = np.linspace(0, 1, 100)
+        y = np.linspace(0, 1, 100)
+        X, Y = np.meshgrid(x, y)
+        
+        # Create custom colormap
+        colors = ['darkblue', 'blue', 'green', 'yellow', 'red']
+        n_bins = 100
+        cmap = LinearSegmentedColormap.from_list('signal_strength', colors, N=n_bins)
+        
+        # Individual AP coverage maps
+        for ap in self.access_points:
+            Z = np.zeros_like(X)
+            for i in range(len(x)):
+                for j in range(len(y)):
+                    Z[i,j] = self._calculate_signal_strength(X[i,j], Y[i,j], ap)
+            
+            plt.figure(figsize=(12, 8))
+            plt.imshow(floor_plan, extent=[0, 1, 0, 1], alpha=0.5)
+            plt.imshow(Z, extent=[0, 1, 0, 1], alpha=0.5, cmap=cmap)
+            plt.colorbar(label='Signal Strength (dBm)')
+            plt.scatter(ap['x'], ap['y'], color='red', marker='^', s=100, label=ap['ssid'])
+            plt.title(f'Coverage Map - {ap["ssid"]} (Channel {ap["channel"]})')
+            plt.legend()
+            plt.savefig(os.path.join(self.output_dir, f'coverage_{ap["ssid"]}.png'))
+            plt.close()
+            
+        # Combined coverage map
+        Z_combined = np.full_like(X, -100)
+        for i in range(len(x)):
+            for j in range(len(y)):
+                signals = [self._calculate_signal_strength(X[i,j], Y[i,j], ap)
+                          for ap in self.access_points]
+                Z_combined[i,j] = max(signals)  # Best signal at each point
+        
+        plt.figure(figsize=(12, 8))
+        plt.imshow(floor_plan, extent=[0, 1, 0, 1], alpha=0.5)
+        plt.imshow(Z_combined, extent=[0, 1, 0, 1], alpha=0.5, cmap=cmap)
+        plt.colorbar(label='Signal Strength (dBm)')
+        for ap in self.access_points:
+            plt.scatter(ap['x'], ap['y'], color='red', marker='^', s=100, 
+                       label=f'{ap["ssid"]} (Ch {ap["channel"]})')
+        plt.title('Combined Coverage Map')
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.tight_layout()
+        plt.savefig(os.path.join(self.output_dir, 'coverage_combined.png'))
+        plt.close()
+        
+        # Interference map
+        Z_interference = np.zeros_like(X)
+        for i in range(len(x)):
+            for j in range(len(y)):
+                # Find strongest AP at this point
+                signals = [(ap, self._calculate_signal_strength(X[i,j], Y[i,j], ap))
+                          for ap in self.access_points]
+                best_ap, best_signal = max(signals, key=lambda x: x[1])
+                
+                # Calculate interference from other APs
+                interference = self._calculate_interference(X[i,j], Y[i,j], 
+                                                         best_ap['channel'], 
+                                                         exclude_ap=best_ap)
+                
+                # Calculate Signal-to-Interference Ratio (SIR)
+                Z_interference[i,j] = best_signal - interference
+        
+        plt.figure(figsize=(12, 8))
+        plt.imshow(floor_plan, extent=[0, 1, 0, 1], alpha=0.5)
+        plt.imshow(Z_interference, extent=[0, 1, 0, 1], alpha=0.5, 
+                  cmap='RdYlBu_r', vmin=-10, vmax=30)
+        plt.colorbar(label='Signal-to-Interference Ratio (dB)')
+        for ap in self.access_points:
+            plt.scatter(ap['x'], ap['y'], color='red', marker='^', s=100,
+                       label=f'{ap["ssid"]} (Ch {ap["channel"]})')
+        plt.title('Interference Map')
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.tight_layout()
+        plt.savefig(os.path.join(self.output_dir, 'interference_map.png'))
+        plt.close()
+        
         print(f"Building visualizations saved in {self.output_dir}/")
