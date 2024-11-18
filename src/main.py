@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 from utils.results_manager import ResultsManager
 from utils.floor_plan_generator import FloorPlanGenerator
+from utils.display_config import DisplayConfig
 
 def collect_training_data(duration_minutes=60, interval_seconds=1):
     """Collect WiFi signal strength data for training.
@@ -160,8 +161,24 @@ def main():
     
     if args.building_layout:
         # Generate a floor plan first
-        generator = FloorPlanGenerator(width=1000, height=800)
-        generator.generate_office_layout(num_rooms=10)
+        generator = FloorPlanGenerator(width=DisplayConfig.INTERNAL_WIDTH, height=DisplayConfig.INTERNAL_HEIGHT)
+        
+        # Create a realistic office layout
+        # Large open space in the middle
+        generator.add_room(300, 200, 600, 400, 'open_space')
+        
+        # Meeting rooms along the top
+        generator.add_room(100, 50, 200, 150, 'meeting')
+        generator.add_room(350, 50, 200, 150, 'meeting')
+        generator.add_room(600, 50, 200, 150, 'meeting')
+        generator.add_room(850, 50, 200, 150, 'meeting')
+        
+        # Private offices along the bottom
+        generator.add_room(100, 600, 150, 150, 'office')
+        generator.add_room(300, 600, 150, 150, 'office')
+        generator.add_room(500, 600, 150, 150, 'office')
+        generator.add_room(700, 600, 150, 150, 'office')
+        generator.add_room(900, 600, 150, 150, 'office')
         
         # Save floor plan to results directory
         floor_plan_path = os.path.join(results_manager.current_run['path'], 'floor_plans', 'generated_floor_plan.png')
@@ -173,18 +190,10 @@ def main():
             output_dir=os.path.join(results_manager.current_run['path'], 'visualizations')
         )
         
-        # Add access points at room centers
-        ap_locations = []
-        for i, room in enumerate(generator.rooms):
-            if i < 3:  # Add APs to first 3 rooms
-                x_percent = (room['x'] + room['width']/2) / generator.width * 100
-                y_percent = (room['y'] + room['height']/2) / generator.height * 100
-                ssid = f"AP_{room['type']}_{i+1}"
-                ap_locations.append((x_percent, y_percent, ssid))
-        
         # Add access points and create visualizations
-        for x_percent, y_percent, ssid in ap_locations:
-            building_viz.add_access_point(x_percent, y_percent, ssid)
+        ap_locations = DisplayConfig.get_ap_positions()
+        for x, y, ssid in ap_locations:
+            building_viz.add_access_point(x, y, ssid)
         
         building_viz.create_all_visualizations()
         

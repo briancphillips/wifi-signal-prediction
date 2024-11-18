@@ -36,10 +36,12 @@ env/
 data/
 visualizations/
 models/
+results/
 *.csv
 *.joblib
-download-4.png
-floor_plan*.png
+*.png
+!floor_plans/*.png  # Keep floor plan images
+notebooks/
 
 # macOS
 .DS_Store

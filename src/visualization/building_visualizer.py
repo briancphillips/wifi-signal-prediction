@@ -1,185 +1,346 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.patches import Rectangle
+from matplotlib.lines import Line2D
+from matplotlib import patches
 import os
+from utils.display_config import DisplayConfig
+
+class BuildingMaterial:
+    """Class representing a building material with signal attenuation properties."""
+    def __init__(self, name, color, attenuation):
+        self.name = name
+        self.color = color
+        self.attenuation = attenuation
+
+# Define common building materials
+BUILDING_MATERIALS = [
+    BuildingMaterial('Concrete Wall', '#808080', 12),
+    BuildingMaterial('Glass Wall', '#ADD8E6', 3),
+    BuildingMaterial('Drywall', '#F5F5DC', 4),
+    BuildingMaterial('Metal Door', '#A0A0A0', 6)
+]
 
 class BuildingVisualizer:
-    def __init__(self, floor_plan_path, output_dir='visualizations'):
-        """Initialize the building visualizer.
-        
-        Args:
-            floor_plan_path (str): Path to floor plan image
-            output_dir (str): Directory to save visualizations
-        """
+    def __init__(self, floor_plan_path, output_dir=None, grid_size=100):
+        """Initialize the building visualizer with enhanced parameters."""
         self.floor_plan_path = floor_plan_path
-        self.output_dir = output_dir
+        self.output_dir = output_dir or os.path.dirname(floor_plan_path)
+        self.grid_size = grid_size
+        self.fig, self.ax = plt.subplots(figsize=(DisplayConfig.FIGURE_WIDTH, DisplayConfig.FIGURE_HEIGHT))
+        self.status_text = self.ax.text(0.02, 0.98, '', transform=self.ax.transAxes)
+        
+        # Enhanced color map for signal strength (red = weak, green = strong)
+        colors = ['#FF0000', '#FFA500', '#FFFF00', '#90EE90', '#00FF00']
+        self.custom_cmap = LinearSegmentedColormap.from_list('custom', colors, N=256)
+        
+        # Signal strength categories (dBm)
+        self.signal_categories = {
+            (-30, -50): 'Excellent',
+            (-50, -67): 'Very Good',
+            (-67, -70): 'Good',
+            (-70, -80): 'Fair',
+            (-80, -90): 'Poor',
+            (-90, -100): 'Very Poor'
+        }
+        
         self.access_points = []
+        self.obstacles = []
+        self.load_floor_plan()
         
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+    def load_floor_plan(self):
+        """Load and setup the floor plan with proper scaling."""
+        self.floor_plan = plt.imread(self.floor_plan_path)
+        self.height, self.width = self.floor_plan.shape[:2]
+        self.set_axis_units()
+        
+    def set_axis_units(self, unit='meters'):
+        """Set axis labels with real-world units."""
+        scale_factor = self.get_scale_factor(unit)
+        self.ax.set_xlabel(f'Distance ({unit})')
+        self.ax.set_ylabel(f'Distance ({unit})')
+        self.ax.set_xticks(np.arange(0, self.width * scale_factor, 5))
+        self.ax.set_yticks(np.arange(0, self.height * scale_factor, 5))
+        
+    def get_scale_factor(self, unit):
+        """Get scale factor for unit conversion."""
+        # Assuming 1 pixel = 10cm
+        if unit == 'meters':
+            return 0.1
+        elif unit == 'feet':
+            return 0.328084
+        return 1.0
+        
+    def add_access_point(self, x, y, name, is_directional=False, beam_direction=0, beam_width=60):
+        """Add an access point with optional directional properties."""
+        ap = {
+            'x': x, 'y': y, 'name': name,
+            'is_directional': is_directional,
+            'beam_direction': beam_direction,
+            'beam_width': beam_width
+        }
+        self.access_points.append(ap)
+        
+    def plot_access_point(self, ap):
+        """Plot an access point with reduced marker size."""
+        self.ax.scatter(ap['x'], ap['y'],
+                       marker='^',
+                       color='red',
+                       s=50,  # Reduced size
+                       label=f"AP: {ap['name']}")
+        if ap['is_directional']:
+            self.add_directional_indicators(ap)
             
-    def add_access_point(self, x_percent, y_percent, ssid, channel=None, power_dbm=-20):
-        """Add an access point to the visualization.
+    def add_directional_indicators(self, ap):
+        """Add directional beam pattern indicators."""
+        angle = ap['beam_direction']
+        width = ap['beam_width']
+        radius = 50  # Beam length
         
-        Args:
-            x_percent (float): X position as percentage of width
-            y_percent (float): Y position as percentage of height
-            ssid (str): AP identifier
-            channel (int): WiFi channel number
-            power_dbm (float): Transmit power in dBm
-        """
-        if channel is None:
-            # Extract channel from SSID if format is AP*_Ch*
-            if '_Ch' in ssid:
-                try:
-                    channel = int(ssid.split('_Ch')[1])
-                except ValueError:
-                    channel = 1
-            else:
-                channel = 1
+        # Calculate beam edges
+        left_angle = np.radians(angle - width/2)
+        right_angle = np.radians(angle + width/2)
+        
+        # Plot beam pattern
+        t = np.linspace(left_angle, right_angle, 100)
+        x = ap['x'] + radius * np.cos(t)
+        y = ap['y'] + radius * np.sin(t)
+        self.ax.plot(x, y, '--', color='red', alpha=0.5)
+        
+    def add_obstacle(self, x, y, width, height, material):
+        """Add an obstacle with material properties."""
+        obstacle = {
+            'x': x, 'y': y,
+            'width': width, 'height': height,
+            'material': material
+        }
+        self.obstacles.append(obstacle)
+        
+    def plot_obstacles(self):
+        """Plot obstacles with material-specific colors and attenuation labels."""
+        for obstacle in self.obstacles:
+            rect = patches.Rectangle(
+                (obstacle['x'], obstacle['y']),
+                obstacle['width'], obstacle['height'],
+                facecolor=obstacle['material'].color,
+                alpha=0.5
+            )
+            self.ax.add_patch(rect)
+            # Add attenuation label
+            self.ax.text(
+                obstacle['x'] + obstacle['width']/2,
+                obstacle['y'] + obstacle['height']/2,
+                f"-{obstacle['material'].attenuation}dB",
+                ha='center', va='center',
+                bbox=dict(facecolor='white', alpha=0.7)
+            )
+            
+    def add_legend_elements(self):
+        """Add comprehensive legend including materials and signal categories."""
+        legend_elements = []
+        
+        # Material elements
+        for material in BUILDING_MATERIALS:
+            legend_elements.append(
+                patches.Patch(facecolor=material.color,
+                            alpha=0.5,
+                            label=f'{material.name} (-{material.attenuation}dB)')
+            )
+            
+        # Signal strength categories
+        for (min_val, max_val), category in self.signal_categories.items():
+            legend_elements.append(
+                patches.Patch(facecolor=self.get_category_color(min_val),
+                            label=f'{category} ({min_val} to {max_val} dBm)')
+            )
+            
+        # AP symbol
+        legend_elements.append(
+            Line2D([0], [0], marker='^', color='w',
+                  markerfacecolor='red', markersize=8,
+                  label='Access Point')
+        )
+        
+        self.ax.legend(handles=legend_elements,
+                      loc='center left',
+                      bbox_to_anchor=(1, 0.5))
+        
+    def get_category_color(self, signal_strength):
+        """Get color for signal strength category."""
+        normalized = (signal_strength + 100) / 70  # Normalize -100 to -30 range
+        return self.custom_cmap(normalized)
+        
+    def make_plot_interactive(self):
+        """Add interactive hover functionality."""
+        def on_hover(event):
+            if event.inaxes:
+                signal_strength = self.get_signal_strength_at_point(event.xdata, event.ydata)
+                self.status_text.set_text(f'Signal: {signal_strength:.1f} dBm')
+                self.fig.canvas.draw_idle()
                 
-        self.access_points.append({
-            'x': x_percent / 100,
-            'y': y_percent / 100,
-            'ssid': ssid,
-            'channel': channel,
-            'power': power_dbm
-        })
+        self.fig.canvas.mpl_connect('motion_notify_event', on_hover)
         
-    def _calculate_signal_strength(self, x, y, ap, material_loss=0):
-        """Calculate signal strength at a point from an AP.
+    def get_signal_strength_at_point(self, x, y):
+        """Calculate signal strength at a specific point."""
+        total_signal = -100  # Minimum signal strength
         
-        Args:
-            x, y (float): Point coordinates
-            ap (dict): Access point information
-            material_loss (float): Signal loss from materials in dB
-            
-        Returns:
-            float: Signal strength in dBm
-        """
-        distance = np.sqrt((x - ap['x'])**2 + (y - ap['y'])**2) * 100  # Convert to meters
-        # Free space path loss model with material attenuation
-        if distance == 0:
-            return ap['power']
-        signal = ap['power'] - (20 * np.log10(distance) + 20 * np.log10(2400) - 27.55) - material_loss
-        return max(-100, signal)  # Cap minimum signal at -100 dBm
+        # Flip y-coordinate to match floor plan coordinate system
+        y = self.height - y
         
-    def _calculate_interference(self, x, y, channel, exclude_ap=None):
-        """Calculate interference at a point from other APs on same or adjacent channels.
-        
-        Args:
-            x, y (float): Point coordinates
-            channel (int): Channel to calculate interference for
-            exclude_ap (dict): AP to exclude from interference calculation
-            
-        Returns:
-            float: Interference power in dBm
-        """
-        interference_power = []
         for ap in self.access_points:
-            if ap == exclude_ap:
-                continue
-            # Calculate channel overlap factor (0 to 1)
-            channel_diff = abs(ap['channel'] - channel)
-            if channel_diff == 0:
-                overlap = 1.0
-            elif channel_diff <= 4:
-                overlap = 1.0 - (channel_diff * 0.2)
-            else:
-                continue
-                
-            signal = self._calculate_signal_strength(x, y, ap)
-            interference_power.append(10 ** (signal/10) * overlap)
+            # Calculate distance in meters (assuming 1 unit = 1 meter)
+            distance = np.sqrt((x - ap['x'])**2 + (y - ap['y'])**2)
             
-        if not interference_power:
-            return -100
-        return 10 * np.log10(sum(interference_power))
+            # WiFi parameters
+            transmit_power = 20  # dBm (typical WiFi AP)
+            frequency = 2.4  # GHz
+            path_loss_exponent = 3.0  # Indoor environment with obstacles
+            
+            # Free space path loss at reference distance (1m)
+            wavelength = 3e8 / (frequency * 1e9)  # meters
+            reference_loss = -20 * np.log10(wavelength / (4 * np.pi))
+            
+            # Path loss model
+            if distance > 0:
+                path_loss = reference_loss + 10 * path_loss_exponent * np.log10(distance)
+                signal = transmit_power - path_loss
+                
+                # Add material attenuation
+                material_loss = self.calculate_material_attenuation(ap['x'], ap['y'], x, y)
+                signal -= material_loss
+                
+                # Directional antenna pattern
+                if ap['is_directional']:
+                    angle = np.degrees(np.arctan2(y - ap['y'], x - ap['x']))
+                    angle_diff = abs(angle - ap['beam_direction'])
+                    if angle_diff > ap['beam_width']/2:
+                        signal -= 20  # Additional loss outside main beam
+                
+                # Update total signal if this AP provides better coverage
+                total_signal = max(total_signal, signal)
         
-    def create_all_visualizations(self):
-        """Create all visualizations for the building layout."""
-        print("Creating building visualizations...")
+        return min(max(total_signal, -100), -30)  # Clamp between -100 and -30 dBm
         
-        # Load floor plan
-        floor_plan = plt.imread(self.floor_plan_path)
-        height, width = floor_plan.shape[:2]
-        
-        # Create grid for heatmap
-        x = np.linspace(0, 1, 100)
-        y = np.linspace(0, 1, 100)
+    def calculate_coverage_statistics(self):
+        """Calculate coverage statistics for the entire area."""
+        x = np.linspace(0, self.width, self.grid_size)
+        y = np.linspace(0, self.height, self.grid_size)
         X, Y = np.meshgrid(x, y)
         
-        # Create custom colormap
-        colors = ['darkblue', 'blue', 'green', 'yellow', 'red']
-        n_bins = 100
-        cmap = LinearSegmentedColormap.from_list('signal_strength', colors, N=n_bins)
-        
-        # Individual AP coverage maps
-        for ap in self.access_points:
-            Z = np.zeros_like(X)
-            for i in range(len(x)):
-                for j in range(len(y)):
-                    Z[i,j] = self._calculate_signal_strength(X[i,j], Y[i,j], ap)
-            
-            plt.figure(figsize=(12, 8))
-            plt.imshow(floor_plan, extent=[0, 1, 0, 1], alpha=0.5)
-            plt.imshow(Z, extent=[0, 1, 0, 1], alpha=0.5, cmap=cmap)
-            plt.colorbar(label='Signal Strength (dBm)')
-            plt.scatter(ap['x'], ap['y'], color='red', marker='^', s=100, label=ap['ssid'])
-            plt.title(f'Coverage Map - {ap["ssid"]} (Channel {ap["channel"]})')
-            plt.legend()
-            plt.savefig(os.path.join(self.output_dir, f'coverage_{ap["ssid"]}.png'))
-            plt.close()
-            
-        # Combined coverage map
-        Z_combined = np.full_like(X, -100)
-        for i in range(len(x)):
-            for j in range(len(y)):
-                signals = [self._calculate_signal_strength(X[i,j], Y[i,j], ap)
-                          for ap in self.access_points]
-                Z_combined[i,j] = max(signals)  # Best signal at each point
-        
-        plt.figure(figsize=(12, 8))
-        plt.imshow(floor_plan, extent=[0, 1, 0, 1], alpha=0.5)
-        plt.imshow(Z_combined, extent=[0, 1, 0, 1], alpha=0.5, cmap=cmap)
-        plt.colorbar(label='Signal Strength (dBm)')
-        for ap in self.access_points:
-            plt.scatter(ap['x'], ap['y'], color='red', marker='^', s=100, 
-                       label=f'{ap["ssid"]} (Ch {ap["channel"]})')
-        plt.title('Combined Coverage Map')
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        plt.tight_layout()
-        plt.savefig(os.path.join(self.output_dir, 'coverage_combined.png'))
-        plt.close()
-        
-        # Interference map
-        Z_interference = np.zeros_like(X)
-        for i in range(len(x)):
-            for j in range(len(y)):
-                # Find strongest AP at this point
-                signals = [(ap, self._calculate_signal_strength(X[i,j], Y[i,j], ap))
-                          for ap in self.access_points]
-                best_ap, best_signal = max(signals, key=lambda x: x[1])
+        signals = np.zeros_like(X)
+        for i in range(self.grid_size):
+            for j in range(self.grid_size):
+                signals[i,j] = self.get_signal_strength_at_point(X[i,j], Y[i,j])
                 
-                # Calculate interference from other APs
-                interference = self._calculate_interference(X[i,j], Y[i,j], 
-                                                         best_ap['channel'], 
-                                                         exclude_ap=best_ap)
-                
-                # Calculate Signal-to-Interference Ratio (SIR)
-                Z_interference[i,j] = best_signal - interference
+        stats = {}
+        total_points = signals.size
+        for (min_val, max_val), category in self.signal_categories.items():
+            points_in_range = np.sum((signals >= min_val) & (signals < max_val))
+            stats[category.lower()] = (points_in_range / total_points) * 100
+            
+        return stats
         
-        plt.figure(figsize=(12, 8))
-        plt.imshow(floor_plan, extent=[0, 1, 0, 1], alpha=0.5)
-        plt.imshow(Z_interference, extent=[0, 1, 0, 1], alpha=0.5, 
-                  cmap='RdYlBu_r', vmin=-10, vmax=30)
-        plt.colorbar(label='Signal-to-Interference Ratio (dB)')
+    def create_all_visualizations(self):
+        """Create and save all visualizations with enhanced features."""
+        self.make_plot_interactive()
+        
+        # Plot floor plan
+        self.ax.imshow(self.floor_plan, extent=[0, self.width, 0, self.height])
+        
+        # Plot obstacles with materials
+        self.plot_obstacles()
+        
+        # Plot APs and coverage
         for ap in self.access_points:
-            plt.scatter(ap['x'], ap['y'], color='red', marker='^', s=100,
-                       label=f'{ap["ssid"]} (Ch {ap["channel"]})')
-        plt.title('Interference Map')
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        plt.tight_layout()
-        plt.savefig(os.path.join(self.output_dir, 'interference_map.png'))
-        plt.close()
+            self.plot_access_point(ap)
+            
+        # Generate and plot heatmap
+        self.plot_signal_heatmap()
         
-        print(f"Building visualizations saved in {self.output_dir}/")
+        # Add comprehensive legend
+        self.add_legend_elements()
+        
+        # Generate coverage report
+        stats = self.calculate_coverage_statistics()
+        self.generate_coverage_report(stats)
+        
+        # Save visualizations
+        if self.output_dir:
+            os.makedirs(self.output_dir, exist_ok=True)
+            plt.savefig(os.path.join(self.output_dir, 'coverage_map.png'),
+                       bbox_inches='tight', dpi=DisplayConfig.DPI)
+            
+    def plot_signal_heatmap(self):
+        """Plot signal strength heatmap with increased resolution."""
+        x = np.linspace(0, self.width, self.grid_size)
+        y = np.linspace(0, self.height, self.grid_size)
+        X, Y = np.meshgrid(x, y)
+        Z = np.zeros_like(X)
+        
+        # Calculate signal strength for each point
+        for i in range(self.grid_size):
+            for j in range(self.grid_size):
+                Z[i,j] = self.get_signal_strength_at_point(X[i,j], Y[i,j])
+        
+        # Create heatmap with proper normalization
+        signal_range = (-100, -30)  # dBm
+        normalized_Z = (Z - signal_range[0]) / (signal_range[1] - signal_range[0])  # 0 to 1
+        
+        # Plot heatmap with transparency
+        # Note: No need for origin='lower' since we flip coordinates in get_signal_strength_at_point
+        heatmap = plt.imshow(normalized_Z, extent=[0, self.width, 0, self.height],
+                           cmap=self.custom_cmap, vmin=0, vmax=1, alpha=0.5)
+        
+        # Add colorbar with original dBm values
+        cbar = plt.colorbar(heatmap)
+        cbar.set_label('Signal Strength (dBm)')
+        cbar_ticks = np.linspace(0, 1, 8)
+        cbar_labels = [f"{signal_range[0] + x * (signal_range[1] - signal_range[0]):.0f}" for x in cbar_ticks]
+        cbar.set_ticks(cbar_ticks)
+        cbar.set_ticklabels(cbar_labels)
+        
+    def calculate_material_attenuation(self, x1, y1, x2, y2):
+        """Calculate material attenuation between two points."""
+        attenuation = 0
+        for obstacle in self.obstacles:
+            if (obstacle['x'] <= x1 <= obstacle['x'] + obstacle['width'] and
+                obstacle['y'] <= y1 <= obstacle['y'] + obstacle['height']):
+                attenuation += obstacle['material'].attenuation
+            if (obstacle['x'] <= x2 <= obstacle['x'] + obstacle['width'] and
+                obstacle['y'] <= y2 <= obstacle['y'] + obstacle['height']):
+                attenuation += obstacle['material'].attenuation
+        return attenuation
+        
+    def generate_coverage_report(self, stats):
+        """Generate a detailed coverage analysis report."""
+        report = ["# WiFi Coverage Analysis Report\n"]
+        report.append("## Coverage Statistics")
+        for category, percentage in stats.items():
+            report.append(f"- {category.title()}: {percentage:.1f}%")
+            
+        report.append("\n## Access Points")
+        for ap in self.access_points:
+            report.append(f"- {ap['name']}: ({ap['x']:.1f}, {ap['y']:.1f})")
+            if ap['is_directional']:
+                report.append(f"  - Beam Direction: {ap['beam_direction']}°")
+                report.append(f"  - Beam Width: {ap['beam_width']}°")
+                
+        report_path = os.path.join(self.output_dir, 'coverage_report.md')
+        with open(report_path, 'w') as f:
+            f.write('\n'.join(report))
+
+# Example usage
+if __name__ == "__main__":
+    visualizer = BuildingVisualizer('floor_plan.png', output_dir='visualizations')
+    
+    # Add access points
+    visualizer.add_access_point(100, 100, 'AP1')
+    visualizer.add_access_point(300, 300, 'AP2', is_directional=True, beam_direction=45, beam_width=60)
+    
+    # Add obstacles
+    concrete = BUILDING_MATERIALS[0]
+    visualizer.add_obstacle(200, 200, 50, 50, concrete)
+    
+    # Create visualizations
+    visualizer.create_all_visualizations()
