@@ -1,0 +1,39 @@
+{
+  "id": "run_20241117_200112",
+  "timestamp": "20241117_200112",
+  "description": "Complete test with enhanced floor plans",
+  "path": "results/run_20241117_200112",
+  "metrics": {
+    "knn": {
+      "rmse": 0.22125742736606563,
+      "r2": 0.9510451508353501,
+      "cv_rmse_mean": 0.28379846654288254,
+      "cv_rmse_std": 0.0958280624066104
+    },
+    "svr": {
+      "rmse": 0.08034307290963467,
+      "r2": 0.9935449906354371,
+      "cv_rmse_mean": 0.18063873985764017,
+      "cv_rmse_std": 0.10597174271186117
+    },
+    "rf": {
+      "rmse": 0.016375195194740313,
+      "r2": 0.9997318529823341,
+      "cv_rmse_mean": 0.0518165505554804,
+      "cv_rmse_std": 0.028704979929962075
+    }
+  },
+  "files": {
+    "data": [
+      "wifi_data.csv"
+    ],
+    "visualizations": [],
+    "models": [],
+    "floor_plans": [
+      {
+        "filename": "enhanced_floor_plan.png",
+        "description": "Enhanced office layout with furniture and materials"
+      }
+    ]
+  }
+}

@@ -1,118 +1,77 @@
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-from datetime import datetime
 
 class WiFiDataPreprocessor:
     def __init__(self):
         """Initialize the WiFi data preprocessor."""
-        self.scaler = StandardScaler()
         self.label_encoders = {}
+        self.scaler = StandardScaler()
         
-    def extract_features(self, df):
-        """Extract and engineer features from raw WiFi data.
+    def preprocess(self, data):
+        """Preprocess WiFi data for model training.
         
         Args:
-            df (pd.DataFrame): Raw WiFi data
+            data (pd.DataFrame): Raw WiFi data
             
         Returns:
-            pd.DataFrame: Processed data with engineered features
+            pd.DataFrame: Preprocessed data
         """
-        # Convert timestamp to datetime if it's not already
-        if isinstance(df['timestamp'].iloc[0], str):
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-            
+        # Create a copy to avoid modifying original data
+        df = data.copy()
+        
+        # Convert timestamp to datetime if needed
+        if 'timestamp' in df.columns and not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
+        
         # Extract time-based features
         df['hour'] = df['timestamp'].dt.hour
         df['minute'] = df['timestamp'].dt.minute
         df['day_of_week'] = df['timestamp'].dt.dayofweek
         
-        # Extract channel information
-        df['channel_number'] = df['channel'].str.extract(r'(\d+)').astype(float)
-        
-        # Convert RSSI to positive scale (optional)
-        df['rssi_positive'] = df['rssi'].abs()
-        
-        # Calculate signal quality (example metric)
-        df['signal_quality'] = (df['rssi_positive'] - df['rssi_positive'].min()) / \
-                             (df['rssi_positive'].max() - df['rssi_positive'].min()) * 100
-                             
-        return df
-    
-    def encode_categorical(self, df):
-        """Encode categorical variables.
-        
-        Args:
-            df (pd.DataFrame): DataFrame with categorical variables
-            
-        Returns:
-            pd.DataFrame: DataFrame with encoded categorical variables
-        """
+        # Encode categorical variables
         categorical_columns = ['ssid', 'bssid', 'security']
-        
         for col in categorical_columns:
             if col in df.columns:
                 if col not in self.label_encoders:
                     self.label_encoders[col] = LabelEncoder()
-                df[f'{col}_encoded'] = self.label_encoders[col].fit_transform(df[col])
+                df[col + '_encoded'] = self.label_encoders[col].fit_transform(df[col])
         
-        return df
-    
-    def scale_features(self, df):
-        """Scale numerical features.
+        # Create signal quality metric
+        df['signal_quality'] = (df['rssi'] + 100) / 70.0  # Normalize to 0-1 range
         
-        Args:
-            df (pd.DataFrame): DataFrame with numerical features
-            
-        Returns:
-            pd.DataFrame: DataFrame with scaled features
-        """
-        numerical_columns = ['rssi', 'channel_number', 'hour', 'minute', 
-                           'day_of_week', 'rssi_positive', 'signal_quality']
+        # Calculate rolling statistics
+        df['rssi_rolling_mean'] = df.groupby('ssid')['rssi'].transform(
+            lambda x: x.rolling(window=5, min_periods=1).mean()
+        )
+        df['rssi_rolling_std'] = df.groupby('ssid')['rssi'].transform(
+            lambda x: x.rolling(window=5, min_periods=1).std()
+        )
         
-        # Create a copy of the dataframe
-        df_scaled = df.copy()
+        # Create channel interference feature
+        df['channel_group'] = df['channel'] // 4  # Group nearby channels
+        df['ap_count_per_channel'] = df.groupby('channel_group')['ssid'].transform('count')
         
-        # Scale numerical features
-        features_to_scale = [col for col in numerical_columns if col in df.columns]
-        if features_to_scale:
-            df_scaled[features_to_scale] = self.scaler.fit_transform(df[features_to_scale])
-        
-        return df_scaled
-    
-    def prepare_features(self, df):
-        """Prepare features for model training.
-        
-        Args:
-            df (pd.DataFrame): Raw WiFi data
-            
-        Returns:
-            pd.DataFrame: Processed data ready for model training
-        """
-        # Extract features
-        df = self.extract_features(df)
-        
-        # Encode categorical variables
-        df = self.encode_categorical(df)
-        
-        # Scale numerical features
-        df = self.scale_features(df)
-        
-        return df
-    
-    def get_feature_names(self):
-        """Get list of feature names used for model training.
-        
-        Returns:
-            list: List of feature names
-        """
-        feature_names = [
-            'rssi', 'channel_number', 'hour', 'minute', 'day_of_week',
-            'rssi_positive', 'signal_quality'
+        # Select and order features for model training
+        feature_columns = [
+            'rssi', 'signal_quality', 'channel',
+            'hour', 'minute', 'day_of_week',
+            'rssi_rolling_mean', 'rssi_rolling_std',
+            'ap_count_per_channel'
         ]
         
-        # Add encoded categorical features
-        for col in self.label_encoders.keys():
-            feature_names.append(f'{col}_encoded')
-            
-        return feature_names
+        # Add encoded categorical columns
+        feature_columns.extend([col + '_encoded' for col in categorical_columns])
+        
+        # Fill missing values
+        df[feature_columns] = df[feature_columns].ffill().bfill()
+        
+        # Scale numerical features
+        df[feature_columns] = self.scaler.fit_transform(df[feature_columns])
+        
+        # Add location information if available
+        if 'x' in df.columns and 'y' in df.columns:
+            df['distance_to_center'] = np.sqrt((df['x'] - 0.5)**2 + (df['y'] - 0.5)**2)
+            feature_columns.extend(['x', 'y', 'distance_to_center'])
+        
+        return df[feature_columns]

@@ -1,200 +1,107 @@
-import subprocess
-import re
-import time
 import pandas as pd
-from datetime import datetime
-import json
-import os
 import numpy as np
-import random
+import time
+from datetime import datetime
+import os
 
 class WiFiDataCollector:
-    def __init__(self, output_dir="data", simulation_mode=True):
+    def __init__(self, simulation_mode=True):
         """Initialize the WiFi data collector.
         
         Args:
-            output_dir (str): Directory to store collected data
-            simulation_mode (bool): If True, generate synthetic data instead of real measurements
+            simulation_mode (bool): Whether to use simulated data
         """
-        self.output_dir = output_dir
         self.simulation_mode = simulation_mode
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-            
-        # Simulation parameters
-        self.simulated_aps = [
-            {
-                'ssid': 'AP_Floor1_Room101',
-                'bssid': '00:11:22:33:44:55',
-                'base_rssi': -45,
-                'channel': '36',
-                'security': 'WPA2'
-            },
-            {
-                'ssid': 'AP_Floor1_Room102',
-                'bssid': '00:11:22:33:44:56',
-                'base_rssi': -55,
-                'channel': '40',
-                'security': 'WPA2'
-            },
-            {
-                'ssid': 'AP_Floor2_Room201',
-                'bssid': '00:11:22:33:44:57',
-                'base_rssi': -65,
-                'channel': '44',
-                'security': 'WPA2'
-            }
-        ]
-    
-    def generate_synthetic_data(self):
-        """Generate synthetic WiFi data for simulation purposes."""
-        networks = []
         
-        for ap in self.simulated_aps:
-            # Add random variation to RSSI
-            rssi_variation = np.random.normal(0, 3)  # 3 dB standard deviation
-            rssi = ap['base_rssi'] + rssi_variation
-            
-            network = {
-                'ssid': ap['ssid'],
-                'bssid': ap['bssid'],
-                'rssi': int(rssi),
-                'channel': ap['channel'],
-                'security': ap['security']
-            }
-            networks.append(network)
-            
-        return networks
-    
-    def get_wifi_info(self):
-        """Collect WiFi information."""
-        if self.simulation_mode:
-            return self.generate_synthetic_data()
-            
-        try:
-            # Note: Real data collection requires elevated privileges
-            # This is left as a placeholder for systems where it's possible
-            cmd = ["wdutil", "info"]
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            output, error = process.communicate()
-            
-            if error:
-                print(f"Error running wdutil: {error.decode()}")
-                return None
-                
-            return self.parse_wifi_data(output.decode())
-        except Exception as e:
-            print(f"Error collecting WiFi data: {e}")
-            return None
-
-    def parse_wifi_data(self, raw_data):
-        """Parse raw WiFi data into structured format.
+    def collect_training_data(self, duration_minutes=60, interval_seconds=1):
+        """Collect WiFi signal strength data for training.
         
         Args:
-            raw_data (str): Raw output from wdutil command
+            duration_minutes (int): Duration to collect data in minutes
+            interval_seconds (int): Interval between measurements in seconds
             
         Returns:
-            list: List of dictionaries containing WiFi information
+            pd.DataFrame: Collected WiFi data
         """
-        if not raw_data:
-            return []
-
-        try:
-            # Split the output into sections
-            sections = raw_data.split('\n\n')
-            
-            # Find the WiFi scan results section
-            scan_section = None
-            for section in sections:
-                if 'Scan Results:' in section or 'Available Networks:' in section:
-                    scan_section = section
-                    break
-            
-            if not scan_section:
-                return []
-            
-            networks = []
-            current_network = {}
-            
-            # Parse the scan results
-            for line in scan_section.split('\n'):
-                line = line.strip()
-                if not line:
-                    if current_network:
-                        networks.append(current_network)
-                        current_network = {}
-                    continue
-                
-                # Try to extract key-value pairs
-                if ':' in line:
-                    key, value = line.split(':', 1)
-                    key = key.strip().lower().replace(' ', '_')
-                    value = value.strip()
-                    
-                    if key == 'ssid':
-                        if current_network:
-                            networks.append(current_network)
-                        current_network = {'ssid': value}
-                    elif key == 'bssid':
-                        current_network['bssid'] = value
-                    elif key == 'rssi':
-                        try:
-                            current_network['rssi'] = int(value.split()[0])
-                        except (ValueError, IndexError):
-                            continue
-                    elif key == 'channel':
-                        current_network['channel'] = value
-                    elif key == 'security':
-                        current_network['security'] = value
-            
-            # Add the last network if exists
-            if current_network:
-                networks.append(current_network)
-            
-            return networks
-            
-        except Exception as e:
-            print(f"Error parsing WiFi data: {e}")
-            return []
-
-    def collect_data(self, duration_seconds=60, interval_seconds=1):
-        """Collect WiFi data over a specified duration.
+        if self.simulation_mode:
+            return self._generate_simulated_data(duration_minutes, interval_seconds)
+        else:
+            return self._collect_real_data(duration_minutes, interval_seconds)
+    
+    def _generate_simulated_data(self, duration_minutes, interval_seconds):
+        """Generate simulated WiFi data.
         
         Args:
-            duration_seconds (int): How long to collect data
+            duration_minutes (int): Duration to generate data for
+            interval_seconds (int): Interval between measurements
+            
+        Returns:
+            pd.DataFrame: Generated WiFi data
+        """
+        # Calculate number of samples
+        n_samples = int((duration_minutes * 60) / interval_seconds)
+        
+        # Generate simulated access points
+        ap_configs = [
+            {'ssid': 'AP1', 'x': 0.2, 'y': 0.3, 'power': -30},
+            {'ssid': 'AP2', 'x': 0.5, 'y': 0.4, 'power': -30},
+            {'ssid': 'AP3', 'x': 0.8, 'y': 0.2, 'power': -30}
+        ]
+        
+        # Generate data for each access point
+        data = []
+        for t in range(n_samples):
+            timestamp = datetime.now().timestamp() + t * interval_seconds
+            
+            for ap in ap_configs:
+                # Add random movement to simulate walking around
+                x = np.random.normal(ap['x'], 0.1)
+                y = np.random.normal(ap['y'], 0.1)
+                
+                # Calculate distance-based signal strength with noise
+                distance = np.sqrt((x - 0.5)**2 + (y - 0.5)**2)
+                rssi = ap['power'] - 20 * np.log10(max(distance, 0.1))
+                rssi += np.random.normal(0, 2)  # Add noise
+                
+                data.append({
+                    'timestamp': timestamp,
+                    'ssid': ap['ssid'],
+                    'bssid': f"00:11:22:33:44:{55+ap_configs.index(ap):02x}",
+                    'rssi': rssi,
+                    'channel': 1 + ap_configs.index(ap) * 5,
+                    'security': 'WPA2',
+                    'x': x,
+                    'y': y
+                })
+        
+        # Convert to DataFrame
+        df = pd.DataFrame(data)
+        
+        # Save to CSV
+        os.makedirs('data', exist_ok=True)
+        output_file = f'data/wifi_data_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        df.to_csv(output_file, index=False)
+        print(f"Data saved to {output_file}")
+        print(f"Collected {len(df)} data points\n")
+        
+        return df
+    
+    def _collect_real_data(self, duration_minutes, interval_seconds):
+        """Collect real WiFi data (not implemented).
+        
+        Args:
+            duration_minutes (int): Duration to collect data
             interval_seconds (int): Interval between measurements
             
         Returns:
             pd.DataFrame: Collected WiFi data
         """
-        all_data = []
-        start_time = time.time()
-        
-        while time.time() - start_time < duration_seconds:
-            networks = self.get_wifi_info()
-            if networks:
-                timestamp = datetime.now()
-                for network in networks:
-                    network['timestamp'] = timestamp
-                all_data.extend(networks)
-            time.sleep(interval_seconds)
-        
-        # Convert to DataFrame
-        df = pd.DataFrame(all_data)
-        
-        if len(df) > 0:
-            # Save data
-            timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = os.path.join(self.output_dir, f"wifi_data_{timestamp_str}.csv")
-            df.to_csv(filename, index=False)
-            print(f"Data saved to {filename}")
-        
-        return df
+        raise NotImplementedError("Real data collection not implemented yet. Use simulation_mode=True")
 
 if __name__ == "__main__":
     collector = WiFiDataCollector(simulation_mode=True)
     print("Starting WiFi data collection (simulation mode)...")
-    data = collector.collect_data(duration_seconds=60)
+    data = collector.collect_training_data(duration_minutes=60)
     print(f"Collected {len(data)} data points")
     print("\nSample of collected data:")
     print(data.head())
