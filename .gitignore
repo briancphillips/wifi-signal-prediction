@@ -42,10 +42,11 @@ results/
 *.joblib
 *.png
 !floor_plans/*.png  # Keep floor plan images
-!runs/run_last/**/*.png  # Keep PNGs in run_last
-!runs/run_last/**/*.csv  # Keep CSVs in run_last
-runs/run_*/  # Ignore all run directories
-!runs/run_last/  # But keep run_last
+runs/*  # Ignore everything in runs
+!runs/run_last/  # Except run_last directory
+!runs/run_last/**  # And everything under run_last
+!runs/run_last/**/*.png  # Including PNGs in run_last
+!runs/run_last/**/*.csv  # And CSVs in run_last
 notebooks/
 
 # macOS
