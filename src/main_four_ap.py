@@ -181,13 +181,14 @@ def main():
     # Create output directory with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     runs_dir = "runs"
+    os.makedirs(runs_dir, exist_ok=True)  # Ensure runs directory exists
     output_dir = os.path.join(runs_dir, f"run_{timestamp}")
     data_dir = os.path.join(output_dir, "data")
     plots_dir = os.path.join(output_dir, "plots")
     os.makedirs(data_dir, exist_ok=True)
     os.makedirs(plots_dir, exist_ok=True)
     
-    # Create or update symbolic link to latest run
+    # Create or update run_last directory
     run_last = os.path.join(runs_dir, "run_last")
     if os.path.exists(run_last):
         if os.path.islink(run_last):
@@ -195,13 +196,18 @@ def main():
         else:
             import shutil
             shutil.rmtree(run_last)
+    
+    # Create empty run_last directory first to ensure it exists
+    os.makedirs(run_last, exist_ok=True)
+    os.makedirs(os.path.join(run_last, "data"), exist_ok=True)
+    os.makedirs(os.path.join(run_last, "plots"), exist_ok=True)
+    
     try:
         os.symlink(f"run_{timestamp}", run_last, target_is_directory=True)
     except OSError:
         # If symlink fails (e.g., on Windows without admin), just copy the directory
         import shutil
-        if os.path.exists(run_last):
-            shutil.rmtree(run_last)
+        shutil.rmtree(run_last)  # Remove the empty directory we created
         shutil.copytree(output_dir, run_last)
     
     # Collect WiFi data
