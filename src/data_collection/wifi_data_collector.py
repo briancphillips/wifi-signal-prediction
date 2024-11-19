@@ -113,12 +113,12 @@ class WiFiDataCollector:
         """Collect RSSI samples for given points considering materials.
         
         Args:
-            points (List[Tuple[float, float]]): List of (x, y) measurement points
-            ap_location (Tuple[float, float]): (x, y) location of access point
-            materials_grid (Optional[List[List[Material]]]): 2D grid of materials
+            points: List of (x, y) measurement points
+            ap_location: (x, y) location of access point
+            materials_grid: Optional 2D grid of materials
             
         Returns:
-            np.ndarray: Array of RSSI values
+            numpy array of RSSI values
         """
         samples = []
         ap_x, ap_y = ap_location
@@ -157,7 +157,7 @@ class WiFiDataCollector:
                             if (0 <= grid_y < len(materials_grid) and 
                                 0 <= grid_x < len(materials_grid[0])):
                                 material = materials_grid[grid_y][grid_x]
-                                if material is not None and material not in materials_seen:
+                                if isinstance(material, Material) and material not in materials_seen:
                                     materials_seen.add(material)
                                     signal_path.add_layer(material)
             

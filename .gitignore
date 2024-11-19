@@ -37,10 +37,15 @@ data/
 visualizations/
 models/
 results/
+.changes/
 *.csv
 *.joblib
 *.png
 !floor_plans/*.png  # Keep floor plan images
+!runs/run_last/**/*.png  # Keep PNGs in run_last
+!runs/run_last/**/*.csv  # Keep CSVs in run_last
+runs/run_*/  # Ignore all run directories
+!runs/run_last/  # But keep run_last
 notebooks/
 
 # macOS
