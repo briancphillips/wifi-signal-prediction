@@ -1,221 +1,224 @@
+"""Main script for WiFi signal strength prediction."""
+
 import os
+import json
+import time
 import argparse
-from data_collection.collector import WiFiDataCollector
-from preprocessing.preprocessor import WiFiDataPreprocessor
-from models.wifi_models import WiFiModelTrainer
-from visualization.visualizer import WiFiVisualizer
-from visualization.building_visualizer import BuildingVisualizer
-import pandas as pd
 import numpy as np
-from utils.results_manager import ResultsManager
-from utils.floor_plan_generator import FloorPlanGenerator
-from utils.display_config import DisplayConfig
+import matplotlib.pyplot as plt
+from src.visualization.building_visualizer import BuildingVisualizer
+from src.data_collection.wifi_data_collector import WiFiDataCollector
+from src.physics.materials import MATERIALS, SignalPath
 
-def collect_training_data(duration_minutes=60, interval_seconds=1):
-    """Collect WiFi signal strength data for training.
+def save_run_info(args, run_dir):
+    """Save run configuration and metadata.
     
     Args:
-        duration_minutes (int): Duration to collect data in minutes
-        interval_seconds (int): Interval between measurements in seconds
-        
-    Returns:
-        pd.DataFrame: Collected WiFi data
+        args: Command line arguments
+        run_dir: Directory to save run information
     """
-    collector = WiFiDataCollector()
-    print(f"Collecting WiFi data for {duration_minutes} minutes...")
-    data = collector.collect_data(duration_seconds=duration_minutes*60, 
-                                interval_seconds=interval_seconds)
-    print(f"Collected {len(data)} data points")
-    return data
+    # Create run info dictionary
+    run_info = {
+        'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+        'configuration': {
+            'building_width': args.width,
+            'building_height': args.height,
+            'ap_location': {'x': args.ap_x, 'y': args.ap_y},
+            'sampling_resolution': args.resolution,
+        },
+        'materials_used': list(MATERIALS.keys()),
+        'mode': 'building_layout' if args.building_layout else 
+               'materials_info' if args.materials else 
+               'signal_strength'
+    }
+    
+    # Save run info
+    with open(os.path.join(run_dir, 'run_info.json'), 'w') as f:
+        json.dump(run_info, f, indent=4)
 
-def train_and_evaluate_models(data, target_column='rssi'):
-    """Train and evaluate all models on the collected data.
-    
-    Args:
-        data (pd.DataFrame): Processed WiFi data
-        target_column (str): Name of the target column to predict
-        
-    Returns:
-        dict: Dictionary containing evaluation metrics for each model
-    """
-    # Prepare features and target
-    preprocessor = WiFiDataPreprocessor()
-    processed_data = preprocessor.prepare_features(data)
-    
-    feature_names = preprocessor.get_feature_names()
-    X = processed_data[feature_names].values
-    y = processed_data[target_column].values
-    
-    # Initialize model trainer
-    trainer = WiFiModelTrainer()
-    
-    # Split data
-    X_train, X_test, y_train, y_test = trainer.prepare_data(X, y)
-    
-    # Train and evaluate each model
-    results = {}
-    for model_name in ['knn', 'svr', 'rf']:
-        print(f"\nTraining {model_name.upper()} model...")
-        
-        # Train model
-        model = trainer.train_model(model_name, X_train, y_train)
-        
-        # Make predictions
-        y_pred = trainer.predict(model_name, X_test)
-        
-        # Evaluate model
-        metrics = trainer.evaluate_model(model_name, X_test, y_test)
-        
-        # Cross-validate
-        cv_results = trainer.cross_validate(model_name, X, y)
-        
-        results[model_name] = {
-            'metrics': metrics,
-            'cv_results': cv_results,
-            'model': model,
-            'predictions': y_pred,
-            'actual': y_test,
-            'feature_names': feature_names
-        }
-        
-        print(f"{model_name.upper()} Results:")
-        print(f"RMSE: {metrics['rmse']:.2f}")
-        print(f"R2 Score: {metrics['r2']:.2f}")
-        print(f"Cross-validation RMSE: {cv_results['mean_rmse']:.2f} (+/- {cv_results['std_rmse']:.2f})")
-    
-    return results, processed_data
-
-def parse_arguments():
+def parse_args():
+    """Parse command line arguments."""
     parser = argparse.ArgumentParser(description='WiFi Signal Strength Prediction')
-    parser.add_argument('--collect', action='store_true',
-                      help='Collect new training data')
-    parser.add_argument('--duration', type=int, default=60,
-                      help='Duration to collect data (minutes)')
-    parser.add_argument('--interval', type=int, default=1,
-                      help='Interval between measurements (seconds)')
-    parser.add_argument('--train', action='store_true',
-                      help='Train models on collected data')
-    parser.add_argument('--data-file', type=str,
-                      help='Path to existing data file (if not collecting new data)')
-    parser.add_argument('--visualize', action='store_true',
-                      help='Create visualizations of the data and model results')
+    
+    # Operation modes
     parser.add_argument('--building-layout', action='store_true',
-                      help='Create building layout visualizations')
+                      help='Generate and display building layout only')
+    parser.add_argument('--signal-strength', action='store_true',
+                      help='Generate signal strength heatmap')
+    parser.add_argument('--materials', action='store_true',
+                      help='Show material properties and effects')
+    
+    # Building dimensions
+    parser.add_argument('--width', type=float, default=20.0,
+                      help='Building width in meters (default: 20.0)')
+    parser.add_argument('--height', type=float, default=15.0,
+                      help='Building height in meters (default: 15.0)')
+    
+    # Access point location
+    parser.add_argument('--ap-x', type=float, default=5.0,
+                      help='Access point X coordinate in meters (default: 5.0)')
+    parser.add_argument('--ap-y', type=float, default=3.0,
+                      help='Access point Y coordinate in meters (default: 3.0)')
+    
+    # Sampling resolution
+    parser.add_argument('--resolution', type=int, default=80,
+                      help='Number of sample points along width (default: 80)')
+    
+    # Output options
+    parser.add_argument('--output', type=str, default=None,
+                      help='Output file path (default: auto-generated in results directory)')
     
     return parser.parse_args()
 
+def create_building(visualizer, args):
+    """Create building layout with walls, doors, and windows.
+    
+    Args:
+        visualizer (BuildingVisualizer): Building visualizer instance
+        args: Command line arguments
+    """
+    # Wall thicknesses
+    CONCRETE_THICKNESS = 0.3
+    DRYWALL_THICKNESS = 0.15
+    DOOR_WIDTH = 1.0
+    WINDOW_WIDTH = 2.0
+    WINDOW_HEIGHT = 1.5
+    
+    # Add rooms and materials
+    # Outer walls (concrete)
+    visualizer.add_material(MATERIALS['concrete'], 0, 0, CONCRETE_THICKNESS, args.height)  # Left wall
+    visualizer.add_material(MATERIALS['concrete'], 0, args.height-CONCRETE_THICKNESS, args.width, CONCRETE_THICKNESS)  # Top wall
+    visualizer.add_material(MATERIALS['concrete'], args.width-CONCRETE_THICKNESS, 0, CONCRETE_THICKNESS, args.height)  # Right wall
+    visualizer.add_material(MATERIALS['concrete'], 0, 0, args.width, CONCRETE_THICKNESS)  # Bottom wall
+    
+    # Inner walls (drywall)
+    visualizer.add_material(MATERIALS['drywall'], args.width/2, CONCRETE_THICKNESS, 
+                          DRYWALL_THICKNESS, args.height-2*CONCRETE_THICKNESS)  # Vertical divider
+    visualizer.add_material(MATERIALS['drywall'], CONCRETE_THICKNESS, args.height/2, 
+                          args.width-2*CONCRETE_THICKNESS, DRYWALL_THICKNESS)  # Horizontal divider
+    
+    # Windows (glass)
+    visualizer.add_material(MATERIALS['glass'], args.width/4, 0, WINDOW_WIDTH, CONCRETE_THICKNESS)  # Bottom window
+    visualizer.add_material(MATERIALS['glass'], 3*args.width/4, args.height-CONCRETE_THICKNESS, 
+                          WINDOW_WIDTH, CONCRETE_THICKNESS)  # Top window
+    visualizer.add_material(MATERIALS['glass'], args.width-CONCRETE_THICKNESS, args.height/3, 
+                          CONCRETE_THICKNESS, WINDOW_HEIGHT)  # Right window
+    
+    # Doors (wood)
+    door_x = args.width/2 - DOOR_WIDTH/2
+    visualizer.add_material(MATERIALS['wood'], door_x, args.height/4, DOOR_WIDTH, 0.1)  # Bottom door
+    visualizer.add_material(MATERIALS['wood'], door_x, 3*args.height/4, DOOR_WIDTH, 0.1)  # Top door
+
+def show_building_layout(args, run_dir):
+    """Display building layout without signal strength."""
+    visualizer = BuildingVisualizer(width=args.width, height=args.height)
+    create_building(visualizer, args)
+    
+    plt.figure(figsize=(12, 8))
+    
+    # Plot materials
+    for material, x, y, w, h in visualizer.walls:
+        color = visualizer.material_colors.get(material.name.lower(), '#FFFFFF')
+        rect = plt.Rectangle((x, y), w, h, facecolor=color, edgecolor='black', alpha=0.7)
+        plt.gca().add_patch(rect)
+        if w > 1.0 or h > 1.0:
+            plt.text(x + w/2, y + h/2, material.name,
+                    horizontalalignment='center',
+                    verticalalignment='center',
+                    fontsize=8)
+    
+    # Plot AP location
+    plt.plot(args.ap_x, args.ap_y, 'r*', markersize=15, label='Access Point')
+    
+    plt.xlim(0, args.width)
+    plt.ylim(0, args.height)
+    plt.title('Building Layout with Access Point')
+    plt.xlabel('X (meters)')
+    plt.ylabel('Y (meters)')
+    plt.grid(True)
+    plt.legend()
+    plt.gca().set_aspect('equal')
+    
+    # Save plot
+    output_path = os.path.join(run_dir, 'building_layout.png')
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    print(f"Building layout saved to: {output_path}")
+    plt.close()
+
+def show_materials_info(run_dir):
+    """Display information about available materials and their properties."""
+    # Create output string
+    output = []
+    output.append("\nAvailable Materials and Properties:")
+    output.append("-" * 80)
+    output.append(f"{'Material':<15} {'Relative Permittivity':<25} {'Conductivity (S/m)':<20} {'Default Thickness (m)'}")
+    output.append("-" * 80)
+    
+    for name, material in MATERIALS.items():
+        output.append(f"{material.name:<15} {material.relative_permittivity:<25.2f} {material.conductivity:<20.3f} {material.thickness:.3f}")
+    
+    output.append("\nMaterial Effects on 2.4 GHz WiFi Signal:")
+    output.append("-" * 80)
+    for name, material in MATERIALS.items():
+        attenuation = material.calculate_attenuation(2.4e9)
+        output.append(f"{material.name:<15} Attenuation: {attenuation:.1f} dB through {material.thickness:.3f}m thickness")
+    
+    # Print to console
+    print('\n'.join(output))
+    
+    # Save to file
+    with open(os.path.join(run_dir, 'materials_info.txt'), 'w') as f:
+        f.write('\n'.join(output))
+    print(f"\nMaterial information saved to: {os.path.join(run_dir, 'materials_info.txt')}")
+
 def main():
-    args = parse_arguments()
+    """Run the main WiFi signal strength prediction demo."""
+    args = parse_args()
     
-    # Initialize results manager
-    results_manager = ResultsManager()
-    run_description = f"WiFi Signal Prediction - {'Data Collection' if args.collect else 'Analysis'}"
-    results_manager.start_new_run(description=run_description)
+    # Create results directory with timestamp
+    timestamp = time.strftime('%Y%m%d_%H%M%S')
+    results_dir = os.path.join('results', timestamp)
+    os.makedirs(results_dir, exist_ok=True)
     
-    # Collect or load data
-    if args.collect:
-        data = collect_training_data(args.duration, args.interval)
-        results_manager.save_data(data, 'wifi_data.csv')
-    elif args.data_file:
-        if not os.path.exists(args.data_file):
-            print(f"Error: Data file {args.data_file} not found")
-            return
-        data = pd.read_csv(args.data_file)
-        results_manager.save_data(data, 'input_data.csv')
-    elif not args.building_layout:
-        print("Error: Must either collect new data (--collect) or provide existing data file (--data-file)")
-        return
-    
-    # Train and evaluate models if data is available
-    if args.train and data is not None:
-        results, processed_data = train_and_evaluate_models(data)
-        
-        # Save model results
-        for model_name, model_results in results.items():
-            results_manager.save_metrics({
-                'rmse': model_results['metrics']['rmse'],
-                'r2': model_results['metrics']['r2'],
-                'cv_rmse_mean': model_results['cv_results']['mean_rmse'],
-                'cv_rmse_std': model_results['cv_results']['std_rmse']
-            }, model_name)
-        
-        # Print summary of best model
-        best_model = min(results.items(), key=lambda x: x[1]['metrics']['rmse'])[0]
-        print(f"\nBest performing model: {best_model}")
-        print(f"RMSE: {results[best_model]['metrics']['rmse']:.2f}")
-        print(f"R2 Score: {results[best_model]['metrics']['r2']:.2f}")
-        
-        # Create visualizations if requested
-        if args.visualize:
-            visualizer = WiFiVisualizer(output_dir=os.path.join(results_manager.current_run['path'], 'visualizations'))
-            visualizer.create_dashboard(data, results)
-            
-            # No need to copy visualizations since they're already in the right place
-            for viz_file in os.listdir(visualizer.output_dir):
-                if viz_file.endswith('.png'):
-                    results_manager.current_run['files']['visualizations'].append({
-                        'filename': viz_file,
-                        'description': viz_file.replace('.png', '').replace('_', ' ').title()
-                    })
-            results_manager._save_run_info()
+    # Save run information
+    save_run_info(args, results_dir)
     
     if args.building_layout:
-        # Generate a floor plan first
-        generator = FloorPlanGenerator(width=DisplayConfig.INTERNAL_WIDTH, height=DisplayConfig.INTERNAL_HEIGHT)
+        show_building_layout(args, results_dir)
+        return
         
-        # Create a realistic office layout
-        # Large open space in the middle
-        generator.add_room(300, 200, 600, 400, 'open_space')
-        
-        # Meeting rooms along the top
-        generator.add_room(100, 50, 200, 150, 'meeting')
-        generator.add_room(350, 50, 200, 150, 'meeting')
-        generator.add_room(600, 50, 200, 150, 'meeting')
-        generator.add_room(850, 50, 200, 150, 'meeting')
-        
-        # Private offices along the bottom
-        generator.add_room(100, 600, 150, 150, 'office')
-        generator.add_room(300, 600, 150, 150, 'office')
-        generator.add_room(500, 600, 150, 150, 'office')
-        generator.add_room(700, 600, 150, 150, 'office')
-        generator.add_room(900, 600, 150, 150, 'office')
-        
-        # Save floor plan to results directory
-        floor_plan_path = os.path.join(results_manager.current_run['path'], 'floor_plans', 'generated_floor_plan.png')
-        generator.draw_floor_plan(floor_plan_path)
-        
-        # Use the generated floor plan for building visualization
-        building_viz = BuildingVisualizer(
-            floor_plan_path,
-            output_dir=os.path.join(results_manager.current_run['path'], 'visualizations')
-        )
-        
-        # Add access points and create visualizations
-        ap_locations = DisplayConfig.get_ap_positions()
-        for x, y, ssid in ap_locations:
-            building_viz.add_access_point(x, y, ssid)
-        
-        building_viz.create_all_visualizations()
-        
-        # Save floor plan info
-        results_manager.current_run['files']['floor_plans'].append({
-            'filename': 'generated_floor_plan.png',
-            'description': 'Synthetically generated office layout'
-        })
-        
-        # Save visualizations info
-        for viz_file in os.listdir(building_viz.output_dir):
-            if viz_file.endswith('.png'):
-                results_manager.current_run['files']['visualizations'].append({
-                    'filename': viz_file,
-                    'description': viz_file.replace('.png', '').replace('_', ' ').title()
-                })
-        results_manager._save_run_info()
+    if args.materials:
+        show_materials_info(results_dir)
+        return
     
-    # Generate run report
-    report_path = results_manager.generate_report()
-    print(f"\nRun report generated: {report_path}")
-    print(f"Results saved in: {results_manager.current_run['path']}")
+    # Default: generate signal strength heatmap
+    visualizer = BuildingVisualizer(width=args.width, height=args.height)
+    collector = WiFiDataCollector()
+    
+    # Create building
+    create_building(visualizer, args)
+    
+    # Generate sample points
+    x = np.linspace(0, args.width, args.resolution)
+    y = np.linspace(0, args.height, int(args.resolution * args.height/args.width))
+    X, Y = np.meshgrid(x, y)
+    points = list(zip(X.flatten(), Y.flatten()))
+    
+    # Set AP location
+    ap_location = (args.ap_x, args.ap_y)
+    
+    # Collect RSSI samples
+    rssi_values = collector.collect_samples(points, ap_location, visualizer.materials_grid)
+    
+    # Plot and save results
+    output_path = os.path.join(results_dir, 'signal_strength.png')
+    visualizer.plot_signal_strength(rssi_values, points, ap_location, output_path)
+    print(f"Signal strength heatmap saved to: {output_path}")
+    
+    # Save sample points and RSSI values
+    np.savez(os.path.join(results_dir, 'signal_data.npz'),
+             points=points,
+             rssi_values=rssi_values)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
