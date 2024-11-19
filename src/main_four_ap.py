@@ -190,25 +190,18 @@ def main():
     
     # Create or update run_last directory
     run_last = os.path.join(runs_dir, "run_last")
+    run_last_data = os.path.join(run_last, "data")
+    run_last_plots = os.path.join(run_last, "plots")
+    
+    # Remove old run_last if it exists
     if os.path.exists(run_last):
-        if os.path.islink(run_last):
-            os.unlink(run_last)
-        else:
-            import shutil
-            shutil.rmtree(run_last)
-    
-    # Create empty run_last directory first to ensure it exists
-    os.makedirs(run_last, exist_ok=True)
-    os.makedirs(os.path.join(run_last, "data"), exist_ok=True)
-    os.makedirs(os.path.join(run_last, "plots"), exist_ok=True)
-    
-    try:
-        os.symlink(f"run_{timestamp}", run_last, target_is_directory=True)
-    except OSError:
-        # If symlink fails (e.g., on Windows without admin), just copy the directory
         import shutil
-        shutil.rmtree(run_last)  # Remove the empty directory we created
-        shutil.copytree(output_dir, run_last)
+        shutil.rmtree(run_last)
+    
+    # Create fresh run_last directories
+    os.makedirs(run_last, exist_ok=True)
+    os.makedirs(run_last_data, exist_ok=True)
+    os.makedirs(run_last_plots, exist_ok=True)
     
     # Collect WiFi data
     logging.info("Collecting WiFi data...")
@@ -219,6 +212,10 @@ def main():
     wifi_data.to_csv(data_path, index=False)
     logging.info(f"Raw data saved to {data_path}")
     
+    # Also save to run_last
+    run_last_data_path = os.path.join(run_last_data, "wifi_data.csv")
+    wifi_data.to_csv(run_last_data_path, index=False)
+    
     # Process and visualize data
     logging.info("Processing and visualizing data...")
     rssi_by_ap = {}
@@ -227,19 +224,23 @@ def main():
         rssi_values = ap_data['rssi'].values
         rssi_grid = rssi_values.reshape(len(y), len(x))
         rssi_by_ap[ap_name] = rssi_grid
-    
-    # Combine RSSI values (take maximum at each point)
-    combined_rssi = np.maximum.reduce(list(rssi_by_ap.values()))
-    
-    # Plot individual AP coverage
-    for ap_name, rssi_grid in rssi_by_ap.items():
+        
+        # Plot individual AP coverage
         output_path = os.path.join(plots_dir, f"coverage_{ap_name}.png")
+        run_last_output_path = os.path.join(run_last_plots, f"coverage_{ap_name}.png")
         visualizer.plot_signal_strength(rssi_grid, points, ap_locations[ap_name], output_path)
+        # Copy to run_last immediately
+        import shutil
+        shutil.copy2(output_path, run_last_output_path)
         logging.info(f"Coverage plot for {ap_name} saved to {output_path}")
     
     # Plot combined coverage
+    combined_rssi = np.maximum.reduce(list(rssi_by_ap.values()))
     output_path = os.path.join(plots_dir, f"coverage_combined.png")
+    run_last_output_path = os.path.join(run_last_plots, f"coverage_combined.png")
     visualizer.plot_signal_strength(combined_rssi, points, ap_locations, output_path)
+    # Copy to run_last immediately
+    shutil.copy2(output_path, run_last_output_path)
     logging.info(f"Combined coverage plot saved to {output_path}")
     
     logging.info("Done!")
