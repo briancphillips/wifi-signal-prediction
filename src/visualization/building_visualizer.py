@@ -6,6 +6,8 @@ from matplotlib.patches import Rectangle
 from matplotlib import patheffects
 from typing import List, Tuple, Optional, Dict
 from src.physics.materials import Material, MATERIALS
+import os
+import seaborn as sns
 
 class BuildingVisualizer:
     """Visualizes WiFi signal strength and building materials."""
@@ -299,4 +301,105 @@ class BuildingVisualizer:
         
         # Save plot with higher resolution
         plt.savefig(output_path, dpi=600, bbox_inches='tight', pad_inches=0.2)
+        plt.close()
+
+    def plot_signal_statistics(self, rssi_by_ap, output_dir):
+        """Generate separate statistical plots for WiFi signal analysis."""
+        self.plot_average_signal_strength(rssi_by_ap, output_dir)
+        self.plot_coverage_area(rssi_by_ap, output_dir)
+        self.plot_signal_distribution(rssi_by_ap, output_dir)
+
+    def plot_average_signal_strength(self, rssi_by_ap, output_dir):
+        """Create a bar plot showing average RSSI values for each AP."""
+        plt.figure(figsize=(10, 6))
+        ap_means = [np.mean(rssi) for rssi in rssi_by_ap.values()]
+        ap_names = list(rssi_by_ap.keys())
+        
+        bars = plt.bar(ap_names, ap_means)
+        plt.axhline(y=-70, color='r', linestyle='--', label='Good Signal (-70 dBm)')
+        plt.axhline(y=-80, color='y', linestyle='--', label='Fair Signal (-80 dBm)')
+        
+        # Add value labels on top of bars
+        for bar in bars:
+            height = bar.get_height()
+            plt.text(bar.get_x() + bar.get_width()/2., height,
+                    f'{height:.1f}',
+                    ha='center', va='bottom')
+        
+        plt.title('Average Signal Strength by Access Point')
+        plt.xlabel('Access Point')
+        plt.ylabel('Average RSSI (dBm)')
+        plt.legend(loc='lower right')
+        plt.grid(True, alpha=0.3)
+        
+        # Adjust layout and save
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, 'average_signal_strength.png'))
+        plt.close()
+
+    def plot_coverage_area(self, rssi_by_ap, output_dir):
+        """Create a grouped bar plot showing coverage area percentages."""
+        thresholds = [-70, -80]  # Good and Fair signal thresholds
+        coverage_data = []
+        
+        for ap_name, rssi_values in rssi_by_ap.items():
+            coverage = []
+            total_points = len(rssi_values)
+            for threshold in thresholds:
+                coverage_count = np.sum(np.array(rssi_values) >= threshold)
+                coverage.append((coverage_count / total_points) * 100)
+            coverage_data.append(coverage)
+        
+        coverage_data = np.array(coverage_data)
+        ap_names = list(rssi_by_ap.keys())
+        x = np.arange(len(ap_names))
+        width = 0.35
+        
+        plt.figure(figsize=(10, 6))
+        plt.bar(x - width/2, coverage_data[:, 0], width, label='Good Signal (≥ -70 dBm)')
+        plt.bar(x + width/2, coverage_data[:, 1], width, label='Fair Signal (≥ -80 dBm)')
+        
+        plt.xlabel('Access Point')
+        plt.ylabel('Coverage Percentage (%)')
+        plt.title('WiFi Coverage Analysis by Access Point')
+        plt.xticks(x, ap_names)
+        plt.legend(loc='upper right')
+        plt.grid(True, alpha=0.3)
+        
+        # Add percentage labels
+        for i in range(len(ap_names)):
+            plt.text(i - width/2, coverage_data[i, 0], f'{coverage_data[i, 0]:.1f}%',
+                    ha='center', va='bottom')
+            plt.text(i + width/2, coverage_data[i, 1], f'{coverage_data[i, 1]:.1f}%',
+                    ha='center', va='bottom')
+        
+        # Adjust layout and save
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, 'coverage_area.png'))
+        plt.close()
+
+    def plot_signal_distribution(self, rssi_by_ap, output_dir):
+        """Create distribution plots (histogram + KDE) for signal strength."""
+        plt.figure(figsize=(12, 6))
+        colors = plt.cm.Set3(np.linspace(0, 1, len(rssi_by_ap)))
+        
+        # Plot KDE for each AP using flattened values
+        for (ap_name, rssi_grid), color in zip(rssi_by_ap.items(), colors):
+            rssi_values = rssi_grid.flatten()  # Flatten the grid to 1D array
+            sns.kdeplot(data=rssi_values, label=ap_name, color=color)
+        
+        # Add threshold lines
+        plt.axvline(x=-70, color='r', linestyle='--', label='Good Signal (-70 dBm)')
+        plt.axvline(x=-80, color='y', linestyle='--', label='Fair Signal (-80 dBm)')
+        
+        plt.title('Signal Strength Distribution by Access Point')
+        plt.xlabel('RSSI (dBm)')
+        plt.ylabel('Density')
+        plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+        plt.grid(True, alpha=0.3)
+        
+        # Adjust layout with extra space for legend
+        plt.tight_layout()
+        plt.subplots_adjust(right=0.85)
+        plt.savefig(os.path.join(output_dir, 'signal_distribution.png'))
         plt.close()

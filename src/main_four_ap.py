@@ -243,6 +243,14 @@ def main():
     shutil.copy2(output_path, run_last_output_path)
     logging.info(f"Combined coverage plot saved to {output_path}")
     
+    # Generate statistical plots
+    visualizer.plot_signal_statistics(rssi_by_ap, plots_dir)
+    # Copy to run_last
+    for plot_name in ['average_signal_strength.png', 'coverage_area.png', 'signal_distribution.png']:
+        shutil.copy2(os.path.join(plots_dir, plot_name),
+                    os.path.join(run_last_plots, plot_name))
+    logging.info("Signal statistics plots saved")
+    
     logging.info("Done!")
 
 if __name__ == "__main__":
