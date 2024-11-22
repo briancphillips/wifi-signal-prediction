@@ -26,16 +26,9 @@ ENV/
 env/
 .env
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
 # Project specific
 data/
 visualizations/
-models/
 results/
 .changes/
 *.csv
@@ -44,7 +37,6 @@ results/
 !floor_plans/*.png  # Keep floor plan images
 
 # Runs directory handling
-runs/run_*/
 !runs/run_last/
 !runs/run_last/data/
 !runs/run_last/plots/
@@ -52,6 +44,19 @@ runs/run_*/
 !runs/run_last/**/*.csv
 
 notebooks/
+
+# Generated files
+runs/
+models/
+*.pyc
+__pycache__/
+.pytest_cache/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
 
 # macOS
 .DS_Store

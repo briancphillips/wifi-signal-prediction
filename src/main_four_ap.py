@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from src.visualization.building_visualizer import BuildingVisualizer
 from src.data_collection.wifi_data_collector import WiFiDataCollector
 from src.physics.materials import MATERIALS, SignalPath
+from src.models.wifi_classifier import WiFiSignalPredictor
 import logging
 from datetime import datetime
 
@@ -158,6 +159,7 @@ def main():
 
     # Initialize components
     collector = WiFiDataCollector()
+    predictor = WiFiSignalPredictor()
     
     # Define building layout and materials
     building_width = 50  # meters
@@ -251,6 +253,89 @@ def main():
                     os.path.join(run_last_plots, plot_name))
     logging.info("Signal statistics plots saved")
     
+    # Train models and generate classifier plots
+    logging.info("Training models and generating classifier plots...")
+    model_results = {}
+    for ap_name in ap_locations.keys():
+        ap_data = wifi_data[wifi_data['ssid'] == ap_name]
+        model_results[ap_name] = predictor.train(ap_data, ap_name)
+    
+    # Save trained models
+    predictor.save_models(output_dir)
+    logging.info("Models saved")
+    
+    # Generate classifier plots
+    for ap_name, results in model_results.items():
+        for model_name, model_data in results.items():
+            # Prediction accuracy plot
+            plt.figure(figsize=(10, 6))
+            plt.scatter(model_data['actual'], model_data['predictions'], alpha=0.5)
+            plt.plot([model_data['actual'].min(), model_data['actual'].max()],
+                    [model_data['actual'].min(), model_data['actual'].max()],
+                    'r--', lw=2)
+            plt.xlabel('Actual Signal Strength (dBm)')
+            plt.ylabel('Predicted Signal Strength (dBm)')
+            plt.title(f'Prediction Accuracy - {ap_name} - {model_name.upper()}')
+            
+            # Add metrics to plot
+            rmse = model_data['metrics']['rmse']
+            r2 = model_data['metrics']['r2']
+            plt.text(0.05, 0.95,
+                    f'RMSE: {rmse:.2f}\nR²: {r2:.2f}',
+                    transform=plt.gca().transAxes,
+                    verticalalignment='top')
+            
+            plt.tight_layout()
+            output_path = os.path.join(plots_dir, f'prediction_accuracy_{ap_name}_{model_name}.png')
+            plt.savefig(output_path)
+            shutil.copy2(output_path, os.path.join(run_last_plots, f'prediction_accuracy_{ap_name}_{model_name}.png'))
+            plt.close()
+    
+    # Model comparison plot
+    plt.figure(figsize=(12, 6))
+    models = list(results.keys())
+    x = np.arange(len(ap_locations))
+    width = 0.35
+    
+    for i, model_name in enumerate(models):
+        rmse_values = [model_results[ap][model_name]['metrics']['rmse'] 
+                      for ap in ap_locations.keys()]
+        plt.bar(x + i*width, rmse_values, width, label=model_name.upper())
+    
+    plt.xlabel('Access Point')
+    plt.ylabel('RMSE (dBm)')
+    plt.title('Model Performance Comparison')
+    plt.xticks(x + width/2, ap_locations.keys())
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    output_path = os.path.join(plots_dir, 'model_comparison.png')
+    plt.savefig(output_path)
+    shutil.copy2(output_path, os.path.join(run_last_plots, 'model_comparison.png'))
+    plt.close()
+    
+    # Feature importance plot (for Random Forest)
+    plt.figure(figsize=(10, 6))
+    feature_importance = predictor.feature_importance
+    for ap_name in ap_locations.keys():
+        importance = feature_importance[ap_name]
+        plt.plot(importance.keys(), importance.values(), 'o-', label=ap_name)
+    
+    plt.xlabel('Features')
+    plt.ylabel('Importance')
+    plt.title('Feature Importance (Random Forest)')
+    plt.xticks(rotation=45)
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    output_path = os.path.join(plots_dir, 'feature_importance.png')
+    plt.savefig(output_path)
+    shutil.copy2(output_path, os.path.join(run_last_plots, 'feature_importance.png'))
+    plt.close()
+    
+    logging.info("Classifier plots saved")
     logging.info("Done!")
 
 if __name__ == "__main__":

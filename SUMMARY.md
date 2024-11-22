@@ -59,6 +59,82 @@ The Random Forest model consistently outperforms other approaches, providing:
 - High stability across different scenarios
 - Reliable performance for real-world applications
 
+## Current Visualization Capabilities
+
+### 1. Coverage Mapping
+- **Individual AP Coverage**: Detailed heatmaps showing signal strength for each access point
+- **Combined Coverage**: Overall signal strength map using the best signal at each point
+- **Material Overlay**: Building structure visualization showing walls and materials
+
+### 2. Statistical Analysis
+- **Average Signal Strength**: Bar plots comparing mean RSSI values across APs
+  - Good signal threshold (-70 dBm)
+  - Fair signal threshold (-80 dBm)
+  - Actual values displayed on bars
+
+- **Coverage Analysis**: Percentage of area covered by each AP
+  - Good coverage (≥ -70 dBm)
+  - Fair coverage (≥ -80 dBm)
+  - Grouped bar plots with percentage labels
+
+- **Signal Distribution**: KDE plots showing signal strength patterns
+  - Individual distribution curve for each AP
+  - Signal quality threshold indicators
+  - Clear legend and grid lines
+
+### 3. Data Collection
+- High-resolution sampling grid (200x120 points)
+- Signal strength measurements in dBm
+- Material effects on signal propagation
+- Raw data saved in CSV format
+
+### 4. Future Enhancements
+- Machine learning model integration
+- Prediction accuracy visualization
+- Feature importance analysis
+- Time-series signal analysis
+- 3D signal mapping capabilities
+
+## Technical Details
+
+### Resolution and Accuracy
+- Sampling resolution: 0.25m x 0.25m
+- Signal strength range: -100 dBm to -30 dBm
+- Material attenuation modeling
+- Path loss calculations
+
+### Building Layout
+- Dimensions: 50m x 30m
+- Multiple room configurations
+- Various building materials:
+  - Concrete walls
+  - Glass windows
+  - Wooden doors
+  - Drywall partitions
+
+### Access Point Configuration
+- 4 APs strategically placed
+- Coverage optimization
+- Interference minimization
+- Consistent positioning
+
+## Practical Applications
+
+### 1. Network Planning
+- Identify optimal AP locations
+- Evaluate coverage patterns
+- Assess signal quality distribution
+
+### 2. Performance Analysis
+- Compare AP performance
+- Identify coverage gaps
+- Analyze signal distribution
+
+### 3. Optimization
+- Coverage area maximization
+- Signal strength improvement
+- Dead zone elimination
+
 ## Real-World Benefits
 
 1. **Better WiFi Planning**
